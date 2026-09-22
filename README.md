@@ -10,11 +10,8 @@ docker compose up --build
 
 然后打开 <http://localhost:8080>。网页数据默认保存在浏览器本机，不写入服务器。
 
-## CI/CD 发布方式
+## 使用建议
 
-1. 在 Actions 中手动运行 `CI - Promote branch`，选择工作分支和目标分支（通常是 `main`）。
-2. CI 会比较两个分支，使用 squash merge 把变更压成一个 commit，直接写入目标分支；出现冲突或目标分支已被其他提交更新时会停止。
-3. `main` 更新后自动触发 `CD - Build deliverables`，构建并上传网页 ZIP、Docker 镜像包和 APK。
-4. 推送 `web-v0.1.0` 或 `app-v0.1.0` 标签，或者手动选择发布时，CD 会创建 GitHub Release。
+TravelNote 记录的地点、出发地、交通路线、日程和二维码数据包可能包含个人行程信息，建议仅在本机或私有网络中配置使用。
 
-主分支不会被强制重写历史，只会保留每次 CI 合并产生的单一 squash commit。若 `main` 开启了分支保护，需要允许 Actions 写入，或改成由 CI 创建 Pull Request。
+不建议直接部署到公开地址，也不要将包含真实旅行数据的 JSON、二维码或浏览器数据提交到公开仓库。若必须对外提供访问，请先增加身份验证、访问控制、HTTPS 和数据加密，并确认数据不会被搜索引擎或第三方服务收集。
