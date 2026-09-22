@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#102d34" />
+    <meta name="description" content="TravelNote：把想去的地方、出发方式和旅行安排放在一个离线工作台里。" />
+    <title>TravelNote · 旅行灵感工作台</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="主导航">
+        <div class="brand-mark"><span class="brand-dot"></span><span>Travel<span>Note</span></span></div>
+        <div class="workspace-switcher">
+          <div class="workspace-avatar">林</div>
+          <div><strong>我的旅途</strong><small>个人空间</small></div>
+          <span class="chevron">⌄</span>
+        </div>
+        <div class="sidebar-label">工作台</div>
+        <nav class="main-nav">
+          <button class="nav-item active" data-view="destinations"><span class="nav-icon">✦</span><span>旅行灵感</span><b id="destination-count">05</b></button>
+          <button class="nav-item" data-view="plans"><span class="nav-icon">▣</span><span>日程安排</span><b id="plan-count">03</b></button>
+          <button class="nav-item" data-view="exchange"><span class="nav-icon">↗</span><span>离线交换</span></button>
+          <button class="nav-item" data-view="tags"><span class="nav-icon">#</span><span>标签管理</span><b id="tag-count">08</b></button>
+        </nav>
+        <div class="sidebar-label">快速筛选</div>
+        <div class="quick-filters">
+          <button class="quick-filter" data-filter="想去"><i class="dot dot-coral"></i>想去 <span>02</span></button>
+          <button class="quick-filter" data-filter="已计划"><i class="dot dot-blue"></i>已计划 <span>02</span></button>
+          <button class="quick-filter" data-filter="已出发"><i class="dot dot-green"></i>已出发 <span>01</span></button>
+        </div>
+        <div class="sidebar-bottom">
+          <div class="offline-pill"><span class="offline-dot"></span>离线模式已开启</div>
+          <button class="settings-link"><span>⚙</span> 偏好设置</button>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <button class="mobile-menu" aria-label="打开菜单">☰</button>
+          <div class="breadcrumb"><span>我的旅途</span><i>/</i><strong id="page-breadcrumb">旅行灵感</strong></div>
+          <div class="topbar-actions">
+            <button class="icon-button" id="search-toggle" aria-label="搜索">⌕</button>
+            <button class="icon-button" id="notification-button" aria-label="通知">♧<em></em></button>
+            <div class="mini-avatar">林</div>
+          </div>
+        </header>
+
+        <section class="page-wrap" id="page-content"></section>
+      </main>
+
+      <aside class="right-rail">
+        <div class="rail-topline"><span>接下来</span><button id="rail-add-plan">+ 新安排</button></div>
+        <div class="rail-date"><strong>10</strong><span><b>十月</b><small>2026 · 星期六</small></span></div>
+        <div class="timeline" id="timeline"></div>
+        <div class="rail-divider"></div>
+        <div class="rail-section-title"><span>出发地</span><button id="edit-home">编辑</button></div>
+        <div class="home-card"><div class="home-pin">⌖</div><div><strong id="home-location">上海市 · 静安区</strong><small>所有路程从这里开始</small></div></div>
+        <div class="rail-tip"><span>⌁</span><p>手动记录交通方式，更贴近你的真实旅途。</p></div>
+      </aside>
+    </div>
+
+    <div class="modal-backdrop" id="destination-modal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="destination-modal-title">
+        <div class="modal-header"><div><span class="eyebrow">旅行灵感</span><h2 id="destination-modal-title">添加想去的地方</h2></div><button class="close-button" data-close-modal>×</button></div>
+        <form id="destination-form">
+          <input type="hidden" name="id" />
+          <div class="form-grid two-col">
+            <label>地点名称<input name="name" required placeholder="例如：京都" /></label>
+            <label>国家 / 地区<input name="region" required placeholder="例如：日本 · 关西" /></label>
+          </div>
+          <label>具体位置<input name="location" placeholder="城市、街区或坐标" /></label>
+          <div class="form-section-label">为什么想去 <span>可多选</span></div>
+          <div class="tag-picker" id="form-tags"></div>
+          <label>从出发地怎么去<textarea name="transport" rows="3" placeholder="例如：虹桥站 → 杭州东站，约 45 分钟；落地后地铁 2 号线。"></textarea></label>
+          <label>补充备注<textarea name="note" rows="2" placeholder="想看的展览、想吃的店，或任何随手记下的念头"></textarea></label>
+          <div class="modal-footer"><button type="button" class="text-button" data-close-modal>取消</button><button type="submit" class="primary-button">保存地点</button></div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="plan-modal" hidden>
+      <section class="modal small-modal" role="dialog" aria-modal="true" aria-labelledby="plan-modal-title">
+        <div class="modal-header"><div><span class="eyebrow">日程安排</span><h2 id="plan-modal-title">安排一天</h2></div><button class="close-button" data-close-modal>×</button></div>
+        <form id="plan-form">
+          <div class="form-grid two-col"><label>日期<input name="date" type="date" required /></label><label>时间<input name="time" type="time" value="09:00" /></label></div>
+          <label>去哪里<input name="destination" required placeholder="例如：京都·岚山" /></label>
+          <label>这一天做什么<textarea name="activity" rows="3" required placeholder="安排、路线或想完成的事情"></textarea></label>
+          <div class="modal-footer"><button type="button" class="text-button" data-close-modal>取消</button><button type="submit" class="primary-button">加入日程</button></div>
+        </form>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script src="./qrcode.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

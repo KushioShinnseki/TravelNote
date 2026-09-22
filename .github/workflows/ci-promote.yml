@@ -1,0 +1,75 @@
+name: CI - Promote branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: "工作分支，例如 feature/import-flow"
+        required: true
+        type: string
+      target_branch:
+        description: "目标分支，通常是 main"
+        required: true
+        default: main
+        type: string
+      commit_message:
+        description: "合并到目标分支时生成的单一 commit message"
+        required: true
+        default: "ci: promote selected branch"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ci-promote-${{ inputs.target_branch }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure bot identity
+        run: |
+          git config user.name "travelnote-ci[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch and validate branches
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+        run: |
+          if [[ "$SOURCE_BRANCH" == "$TARGET_BRANCH" ]]; then
+            echo "source_branch and target_branch must be different"
+            exit 1
+          fi
+          git fetch --no-tags origin "refs/heads/$SOURCE_BRANCH:refs/remotes/origin/$SOURCE_BRANCH"
+          git fetch --no-tags origin "refs/heads/$TARGET_BRANCH:refs/remotes/origin/$TARGET_BRANCH"
+
+      - name: Show change summary
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+        run: git diff --stat "origin/$TARGET_BRANCH...origin/$SOURCE_BRANCH"
+
+      - name: Create one squash commit on target branch
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          COMMIT_MESSAGE: ${{ inputs.commit_message }}
+        run: |
+          git switch --create "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+          git merge --squash "origin/$SOURCE_BRANCH"
+          if git diff --cached --quiet; then
+            echo "No changes to promote"
+            exit 1
+          fi
+          git commit --message "$COMMIT_MESSAGE"
+          git push origin "HEAD:$TARGET_BRANCH"

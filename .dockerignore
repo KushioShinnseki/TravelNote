@@ -1,0 +1,7 @@
+.git
+.github
+.openai
+node_modules
+*.zip
+*.apk
+README.md
