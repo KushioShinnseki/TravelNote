@@ -3,3 +3,7 @@ artifacts/
 .sites-runtime/
 *.apk
 *.aab
+*.keystore
+*.jks
+signing-secrets.txt
+*.keystore.base64

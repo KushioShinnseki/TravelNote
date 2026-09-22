@@ -16,6 +16,7 @@ android {
         create("release") {
             if (hasCiSigning) {
                 storeFile = file(signingStorePath!!)
+                storeType = "JKS"
                 storePassword = signingStorePassword ?: ""
                 keyAlias = signingKeyAlias ?: ""
                 keyPassword = signingKeyPassword ?: ""
