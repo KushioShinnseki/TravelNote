@@ -1,6 +1,6 @@
 # TravelNote Android
 
-当前目录已经包含一个最小可构建的 Android App，负责离线导入并展示 TravelNote 数据。工程结构：
+当前目录已经包含一个最小可构建的 Android App，负责离线导入并展示 TravelNote 数据。二维码和 JSON 数据包必须包含 `accountId`；首次导入绑定账号，后续只接受同一账号的数据，并按地点/日程记录 ID 统计新建、更新和删除。工程结构：
 
 ```text
 mobile/

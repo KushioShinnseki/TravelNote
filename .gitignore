@@ -1,6 +1,7 @@
 node_modules/
 artifacts/
 .sites-runtime/
+.env
 *.apk
 *.aab
 *.keystore

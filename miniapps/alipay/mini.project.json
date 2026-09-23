@@ -1,0 +1,6 @@
+{
+  "component2": true,
+  "enableNodeModuleBabelTransform": true,
+  "enableAppxNg": true,
+  "miniprogramRoot": "./"
+}

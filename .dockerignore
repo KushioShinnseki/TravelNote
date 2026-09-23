@@ -1,6 +1,9 @@
 .git
 .github
 .openai
+.env
+.env.*
+!.env.example
 node_modules
 *.zip
 *.apk
