@@ -177,7 +177,12 @@ public class MainActivity extends Activity {
             for (int i = 0; i < destinations.length(); i++) {
                 JSONObject item = destinations.optJSONObject(i);
                 if (item != null && matchesTag(item)) {
-                    content.addView(destinationCard(item), marginParams(0, 0, 0, 11));
+                    try {
+                        content.addView(destinationCard(item), marginParams(0, 0, 0, 11));
+                    } catch (RuntimeException error) {
+                        Log.e(TAG, "地点卡片渲染失败", error);
+                        content.addView(text(item.optString("name", "未命名地点"), 13, MUTED, false), marginParams(0, 0, 0, 11));
+                    }
                     hasDestination = true;
                 }
             }
@@ -188,7 +193,14 @@ public class MainActivity extends Activity {
         if (plans != null && plans.length() > 0) {
             for (int i = 0; i < plans.length(); i++) {
                 JSONObject item = plans.optJSONObject(i);
-                if (item != null) content.addView(planCard(item), marginParams(0, 0, 0, 10));
+                if (item != null) {
+                    try {
+                        content.addView(planCard(item), marginParams(0, 0, 0, 10));
+                    } catch (RuntimeException error) {
+                        Log.e(TAG, "日程卡片渲染失败", error);
+                        content.addView(text(item.optString("destination", "未命名安排"), 13, MUTED, false), marginParams(0, 0, 0, 10));
+                    }
+                }
             }
         } else {
             content.addView(text("还没有安排好的日期。", 13, MUTED, false));
@@ -372,17 +384,22 @@ public class MainActivity extends Activity {
     }
 
     private void addCollapsedMarkdown(LinearLayout parent, String source, String collapsedLabel, float size, int color) {
-        TextView toggle = text(collapsedLabel, 11, CORAL, true);
-        TextView details = markdownText(source, size, color);
-        details.setVisibility(View.GONE);
-        toggle.setPadding(0, dp(5), 0, dp(2));
-        toggle.setOnClickListener(v -> {
-            boolean expanded = details.getVisibility() != View.VISIBLE;
-            details.setVisibility(expanded ? View.VISIBLE : View.GONE);
-            toggle.setText(expanded ? "收起补充说明" : collapsedLabel);
-        });
-        parent.addView(toggle, marginParams(0, 5, 0, 0));
-        parent.addView(details, marginParams(0, 2, 0, 0));
+        try {
+            TextView toggle = text(collapsedLabel, 11, CORAL, true);
+            TextView details = markdownText(source, size, color);
+            details.setVisibility(View.GONE);
+            toggle.setPadding(0, dp(5), 0, dp(2));
+            toggle.setOnClickListener(v -> {
+                boolean expanded = details.getVisibility() != View.VISIBLE;
+                details.setVisibility(expanded ? View.VISIBLE : View.GONE);
+                toggle.setText(expanded ? "收起补充说明" : collapsedLabel);
+            });
+            parent.addView(toggle, marginParams(0, 5, 0, 0));
+            parent.addView(details, marginParams(0, 2, 0, 0));
+        } catch (RuntimeException error) {
+            Log.e(TAG, "Markdown 补充说明渲染失败，回退为纯文本", error);
+            parent.addView(text(collapsedLabel + "：" + source, size, color, false), marginParams(0, 5, 0, 0));
+        }
     }
 
     private void applyMarkup(SpannableStringBuilder value, Pattern pattern, int styleType) {
