@@ -80,20 +80,12 @@ jobs:
             --cookie /tmp/travelnote-cookies.txt \
             http://127.0.0.1:8080/api/workspace >/dev/null
 
-      - name: Package Docker images
-        run: |
-          mkdir -p artifacts
-          docker save travelnote-web:local travelnote-api:latest postgres:16-alpine | gzip -9 > artifacts/travelnote-docker-images.tar.gz
-          sha256sum artifacts/travelnote-docker-images.tar.gz > artifacts/travelnote-docker-images.tar.gz.sha256
-
       - name: Package complete web Docker ZIP
         run: |
           rm -rf artifacts/travelnote-web-package
           mkdir -p artifacts/travelnote-web-package
           cp -R dist server deploy artifacts/travelnote-web-package/
           cp Dockerfile docker-compose.yml .dockerignore .env.example README.md artifacts/travelnote-web-package/
-          mkdir -p artifacts/travelnote-web-package/docker-images
-          cp artifacts/travelnote-docker-images.tar.gz artifacts/travelnote-docker-images.tar.gz.sha256 artifacts/travelnote-web-package/docker-images/
           (cd artifacts/travelnote-web-package && zip -r ../travelnote-web.zip .)
           sha256sum artifacts/travelnote-web.zip > artifacts/travelnote-web.zip.sha256
 
@@ -216,7 +208,5 @@ jobs:
           files: |
             artifacts/travelnote-web.zip
             artifacts/travelnote-web.zip.sha256
-            artifacts/travelnote-docker-images.tar.gz
-            artifacts/travelnote-docker-images.tar.gz.sha256
             artifacts/travelnote-release.apk
             artifacts/travelnote-release.apk.sha256

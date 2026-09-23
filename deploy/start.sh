@@ -6,7 +6,6 @@ PACKAGE_DIR="$(cd -- "$DEPLOY_DIR/.." && pwd)"
 PROJECT_NAME="${TRAVELNOTE_COMPOSE_PROJECT:-travelnote}"
 COMPOSE_FILE="${TRAVELNOTE_COMPOSE_FILE:-$PACKAGE_DIR/docker-compose.yml}"
 ENV_FILE="${TRAVELNOTE_ENV_FILE:-$PACKAGE_DIR/.env}"
-IMAGE_ARCHIVE="$PACKAGE_DIR/docker-images/travelnote-docker-images.tar.gz"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "未找到 docker，请先安装 Docker Engine 和 Docker Compose plugin。" >&2
@@ -32,11 +31,6 @@ compose=(docker compose
   --file "$COMPOSE_FILE"
   --env-file "$ENV_FILE")
 
-if [[ -f "$IMAGE_ARCHIVE" ]]; then
-  echo "加载 TravelNote Docker 镜像……"
-  docker load < "$IMAGE_ARCHIVE"
-fi
-
-echo "启动 TravelNote Compose 项目：$PROJECT_NAME"
-"${compose[@]}" up --detach --no-build --remove-orphans travelnote-web
+echo "在服务器本地构建并启动 TravelNote Compose 项目：$PROJECT_NAME"
+"${compose[@]}" up --detach --build --remove-orphans travelnote-web
 "${compose[@]}" ps

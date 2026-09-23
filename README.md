@@ -10,11 +10,12 @@ docker compose up --build
 
 然后打开 <http://localhost:8080>，使用本地账号登录。数据库会保存到 Docker volume `travelnote-db`，账号密码只以 bcrypt 哈希形式保存；出发地、标签、旅行地点、交通、旅行安排、地点补充说明、日程和日程补充说明都会按账号保存到 PostgreSQL。
 
-`travelnote-web.zip` 是完整 Web Docker 部署包，包含 `dist` 页面、`server` API、Nginx 配置、Docker Compose 配置、`.env.example` 以及 Web/API/PostgreSQL 镜像。解压后填写 `.env`，可先加载镜像再启动：
+`travelnote-web.zip` 是完整 Web Docker 源码部署包，包含 `dist` 页面、`server` API、Nginx 配置、Docker Compose 配置、`.env.example` 和 Ubuntu 启停脚本，不包含预构建 Docker 镜像。解压后填写 `.env`，启动脚本会在服务器本地构建镜像：
 
 ```bash
-docker load < docker-images/travelnote-docker-images.tar.gz
-docker compose up -d --no-build
+cp .env.example .env
+chmod +x deploy/start.sh deploy/stop.sh
+./deploy/start.sh
 ```
 
 Ubuntu 服务器也可以使用 ZIP 中的脚本启动和停止服务：
