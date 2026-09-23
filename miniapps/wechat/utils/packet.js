@@ -45,7 +45,10 @@ function unique(values) {
 }
 
 function decodePacket(raw) {
-  if (typeof raw !== 'string' || raw.indexOf('TN1.') !== 0) throw new Error('不是 TravelNote 二维码');
+  if (typeof raw !== 'string') throw new Error('不是 TravelNote 二维码');
+  raw = raw.trim();
+  if (raw.indexOf('TN1.') !== 0) throw new Error('不是 TravelNote 二维码');
+  raw = raw.replace(/\s+/g, '');
   const packet = JSON.parse(decodeUtf8(decodeBase64Url(raw.slice(4))));
   if (!packet || packet.format !== 'travelnote' || !packet.accountId) throw new Error('数据包缺少账号 ID');
   if (packet.version && Number(packet.version) > 3) throw new Error('数据包版本过新');

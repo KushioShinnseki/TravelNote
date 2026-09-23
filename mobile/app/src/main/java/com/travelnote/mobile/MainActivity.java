@@ -459,9 +459,18 @@ public class MainActivity extends Activity {
             String json = raw == null ? "" : raw.trim();
             if (json.startsWith("\uFEFF")) json = json.substring(1).trim();
             if (json.startsWith("TN1.")) {
-                String encoded = json.substring(4).replace('-', '+').replace('_', '/');
+                // Some camera/decoder implementations insert line breaks into long QR results.
+                // Remove only whitespace from the encoded packet; do not alter JSON imports.
+                String encoded = json.substring(4).replaceAll("\\s+", "");
                 while (encoded.length() % 4 != 0) encoded += "=";
-                json = new String(Base64.decode(encoded, Base64.DEFAULT), StandardCharsets.UTF_8);
+                try {
+                    json = new String(Base64.decode(encoded, Base64.URL_SAFE | Base64.NO_WRAP), StandardCharsets.UTF_8);
+                } catch (IllegalArgumentException firstError) {
+                    // Keep compatibility with older Android Base64 implementations.
+                    String standard = encoded.replace('-', '+').replace('_', '/');
+                    while (standard.length() % 4 != 0) standard += "=";
+                    json = new String(Base64.decode(standard, Base64.DEFAULT), StandardCharsets.UTF_8);
+                }
             }
             JSONObject parsed = new JSONObject(json);
             String incomingAccountId = parsed.optString("accountId", "").trim();
