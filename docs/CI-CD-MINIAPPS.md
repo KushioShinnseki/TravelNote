@@ -84,7 +84,7 @@ CI Promote 成功后会自动将 CD 的 `publish_release` 设置为 `true`。CD 
 - `Dockerfile`
 - `docker-compose.yml`
 - `.env.example`
-- Web、API、PostgreSQL 镜像包
+- Docker 构建所需的完整源码；服务器启动时本地构建 Web 和 API 镜像
 
 ### Android 产物
 
@@ -99,7 +99,7 @@ APK 和校验文件只作为 Artifact/Release 附件，keystore 和密码不会�
 
 ### Artifact 和 Release
 
-- 每次成功运行都会上传 Web Docker 包和 APK Artifact。
+- 每次成功运行都会上传 Web Docker 源码部署包和 APK Artifact。
 - 推送匹配版本标签，或手动运行时选择创建 Release，才会生成 GitHub Release。
 - GitHub Release 不包含微信或支付宝小程序 ZIP。
 - 小程序 ZIP 只在本地 `artifacts/` 生成，不能通过 Git 提交或 CI/CD 发布。

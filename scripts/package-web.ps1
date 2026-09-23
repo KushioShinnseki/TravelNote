@@ -16,11 +16,5 @@ Copy-Item -LiteralPath (Join-Path $root "dist") -Destination $package -Recurse
 Copy-Item -LiteralPath (Join-Path $root "server") -Destination $package -Recurse
 Copy-Item -LiteralPath (Join-Path $root "deploy") -Destination $package -Recurse
 Copy-Item -LiteralPath (Join-Path $root "Dockerfile"), (Join-Path $root "docker-compose.yml"), (Join-Path $root ".dockerignore"), (Join-Path $root ".env.example"), (Join-Path $root "README.md") -Destination $package
-$imageArchive = Join-Path $output "travelnote-docker-images.tar.gz"
-if (Test-Path $imageArchive) {
-  $imageDirectory = Join-Path $package "docker-images"
-  New-Item -ItemType Directory -Force -Path $imageDirectory | Out-Null
-  Copy-Item -LiteralPath $imageArchive, "$imageArchive.sha256" -Destination $imageDirectory
-}
 Compress-Archive -Path (Join-Path $package "*") -DestinationPath $zip -CompressionLevel Optimal
 Write-Output $zip
