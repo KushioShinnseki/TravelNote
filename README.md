@@ -113,3 +113,19 @@ Android 签名使用的 `ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、
 TravelNote 记录的地点、出发地、交通路线、日程和二维码数据包可能包含个人行程信息，建议仅在本机或私有网络中配置使用。
 
 不建议直接部署到公开地址，也不要将包含真实旅行数据的 JSON、二维码或浏览器数据提交到公开仓库。若必须对外提供访问，请先增加身份验证、访问控制、HTTPS 和数据加密，并确认数据不会被搜索引擎或第三方服务收集。
+
+## 支持项目
+
+如果 TravelNote 对你有帮助，欢迎通过以下方式支持项目。
+
+### 微信
+
+![微信收款二维码](docs/donation/wechat-pay.png)
+
+### 财付通 / QQ 钱包
+
+![财付通收款二维码](docs/donation/tenpay.png)
+
+### 支付宝
+
+![支付宝收款二维码](docs/donation/alipay.png)
