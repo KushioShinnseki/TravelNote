@@ -462,15 +462,15 @@ public class MainActivity extends Activity {
                 // Some camera/decoder implementations insert line breaks into long QR results.
                 // Remove only whitespace from the encoded packet; do not alter JSON imports.
                 String encoded = json.substring(4).replaceAll("\\s+", "");
+                // Be tolerant of a copied Markdown-escaped QR value such as \\_.
+                encoded = encoded.replace("\\_", "_").replace("\\-", "-");
+                encoded = encoded.replace('-', '+').replace('_', '/');
                 while (encoded.length() % 4 != 0) encoded += "=";
-                try {
-                    json = new String(Base64.decode(encoded, Base64.URL_SAFE | Base64.NO_WRAP), StandardCharsets.UTF_8);
-                } catch (IllegalArgumentException firstError) {
-                    // Keep compatibility with older Android Base64 implementations.
-                    String standard = encoded.replace('-', '+').replace('_', '/');
-                    while (standard.length() % 4 != 0) standard += "=";
-                    json = new String(Base64.decode(standard, Base64.DEFAULT), StandardCharsets.UTF_8);
-                }
+                // Decode as standard Base64 after normalizing URL-safe '-'/'_' characters.
+                // This is compatible with Android versions whose URL_SAFE decoder handles
+                // unpadded input differently.
+                json = new String(Base64.decode(encoded, Base64.DEFAULT), StandardCharsets.UTF_8).trim();
+                if (json.startsWith("\uFEFF")) json = json.substring(1).trim();
             }
             JSONObject parsed = new JSONObject(json);
             String incomingAccountId = parsed.optString("accountId", "").trim();
