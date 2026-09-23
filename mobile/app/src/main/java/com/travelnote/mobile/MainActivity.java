@@ -455,27 +455,28 @@ public class MainActivity extends Activity {
     }
 
     private void importPacket(String raw) {
+        JSONObject parsed;
         try {
-            String json = raw == null ? "" : raw.trim();
-            if (json.startsWith("\uFEFF")) json = json.substring(1).trim();
-            if (json.startsWith("TN1.")) {
-                // Some camera/decoder implementations insert line breaks into long QR results.
-                // Remove only whitespace from the encoded packet; do not alter JSON imports.
-                String encoded = json.substring(4).replaceAll("\\s+", "");
-                // Be tolerant of a copied Markdown-escaped QR value such as \\_.
-                encoded = encoded.replace("\\_", "_").replace("\\-", "-");
-                encoded = encoded.replace('-', '+').replace('_', '/');
-                while (encoded.length() % 4 != 0) encoded += "=";
-                // Decode as standard Base64 after normalizing URL-safe '-'/'_' characters.
-                // This is compatible with Android versions whose URL_SAFE decoder handles
-                // unpadded input differently.
-                json = new String(Base64.decode(encoded, Base64.DEFAULT), StandardCharsets.UTF_8).trim();
-                if (json.startsWith("\uFEFF")) json = json.substring(1).trim();
-            }
-            JSONObject parsed = new JSONObject(json);
+            parsed = parsePacket(raw);
+        } catch (IllegalArgumentException e) {
+            Log.e(TAG, "二维码 Base64 解码失败", e);
+            showError("二维码 Base64 解码失败，请重新生成二维码");
+            return;
+        } catch (JSONException e) {
+            Log.e(TAG, "二维码 JSON 解析失败", e);
+            showError("二维码 JSON 格式无效，请重新生成二维码");
+            return;
+        } catch (RuntimeException e) {
+            Log.e(TAG, "二维码解析失败", e);
+            showError("二维码解析失败，请安装最新 APK");
+            return;
+        }
+
+        try {
             String incomingAccountId = parsed.optString("accountId", "").trim();
             if (!isValidPacket(parsed) || incomingAccountId.isEmpty()) {
-                throw new JSONException("unsupported packet");
+                showError("数据包字段不完整，请从网页端重新生成二维码");
+                return;
             }
             String currentAccountId = packet == null ? "" : packet.optString("accountId", "").trim();
             if (!currentAccountId.isEmpty() && !currentAccountId.equals(incomingAccountId)) {
@@ -497,12 +498,32 @@ public class MainActivity extends Activity {
                 packet = previous;
                 Log.e(TAG, "渲染导入数据失败", error);
                 renderSafely();
-                throw error;
+                showError("数据已解析，但页面展示失败，请清空本地数据后重试");
             }
         } catch (Exception e) {
             Log.e(TAG, "导入 TravelNote 数据失败", e);
-            showError("这不是有效的 TravelNote 数据包");
+            showError("TravelNote 数据包处理失败，请重试");
         }
+    }
+
+    private JSONObject parsePacket(String raw) throws JSONException {
+        String json = raw == null ? "" : raw.trim();
+        json = json.replace("\u200B", "").replace("\u200C", "").replace("\u200D", "");
+        if (json.startsWith("\uFEFF")) json = json.substring(1).trim();
+        int marker = json.indexOf("TN1.");
+        if (marker > 0) json = json.substring(marker).trim();
+        if (json.startsWith("TN1.")) {
+            // Some camera/decoder implementations insert line breaks into long QR results.
+            String encoded = json.substring(4).replaceAll("\\s+", "");
+            // Be tolerant of a copied Markdown-escaped QR value such as \\_.
+            encoded = encoded.replace("\\_", "_").replace("\\-", "-");
+            encoded = encoded.replace('-', '+').replace('_', '/');
+            while (encoded.length() % 4 != 0) encoded += "=";
+            json = new String(Base64.decode(encoded, Base64.DEFAULT), StandardCharsets.UTF_8).trim();
+            if (json.startsWith("\uFEFF")) json = json.substring(1).trim();
+        }
+        if (!json.startsWith("{")) throw new JSONException("not a JSON packet");
+        return new JSONObject(json);
     }
 
     private boolean isValidPacket(JSONObject value) {
