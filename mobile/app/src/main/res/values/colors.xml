@@ -3,5 +3,6 @@
     <color name="canvas">#F7F5F0</color>
     <color name="paper">#FFFDF9</color>
     <color name="coral">#EE735F</color>
+    <color name="icon_coral">#EF735F</color>
     <color name="muted">#6E8585</color>
 </resources>
