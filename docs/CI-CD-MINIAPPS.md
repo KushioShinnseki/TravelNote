@@ -54,6 +54,8 @@ CI/CD 不处理小程序，只负责 Web Docker 部署包和 Android APK：
   ├─ web-v* / app-v* 标签 push
   └─ 手动 workflow_dispatch
         ↓
+CI 手动 Promote 成功推送 main 后，会显式 dispatch CD
+        ↓
 构建 Web + API + PostgreSQL Docker 栈
         ↓
 健康检查、登录检查、工作区 API 检查
@@ -68,6 +70,8 @@ CI/CD 不处理小程序，只负责 Web Docker 部署包和 Android APK：
         ↓
 满足条件时创建 GitHub Release
 ```
+
+CI Promote 成功后会自动将 CD 的 `publish_release` 设置为 `true`。CD 成功后会按上海时区生成 Release 标签，格式为 `YYYYMMDD_XXXX`，其中 `XXXX` 从当天已有标签中检测最大序号后递增，例如 `20260923_0001`、`20260923_0002`。生成标签指向本次 CD 构建的提交，不会覆盖同日已有 Release。
 
 ### Web Docker 产物
 

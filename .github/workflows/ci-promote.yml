@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: ci-promote-${{ inputs.target_branch }}
@@ -30,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout target branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.target_branch }}
           fetch-depth: 0
@@ -78,3 +79,10 @@ jobs:
           fi
           git commit --message "$COMMIT_MESSAGE"
           git push origin "HEAD:$TARGET_BRANCH"
+
+      - name: Trigger CD for promoted main
+        if: ${{ inputs.target_branch == 'main' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+        run: gh workflow run cd-build.yml --repo "$GITHUB_REPOSITORY" --ref "$TARGET_BRANCH" -f publish_release=true

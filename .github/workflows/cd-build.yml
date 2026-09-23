@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Detect Android project
         id: android
@@ -107,7 +107,7 @@ jobs:
 
       - name: Set up Gradle 8.7
         if: steps.android.outputs.enabled == 'true'
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.7'
 
@@ -154,7 +154,7 @@ jobs:
         run: rm -f mobile/travelnote-release.keystore
 
       - name: Upload CD artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: travelnote-cd-${{ github.sha }}
           path: artifacts/
@@ -166,7 +166,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download CD artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: travelnote-cd-${{ github.sha }}
           path: artifacts
@@ -174,17 +174,44 @@ jobs:
       - name: Resolve release tag
         id: release_tag
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=cd-$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            release_date="$(TZ=Asia/Shanghai date +%Y%m%d)"
+            tag_prefix="${release_date}_"
+            mapfile -t existing_tags < <(
+              git -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" \
+                ls-remote --tags "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/${tag_prefix}*" \
+                | awk -F/ '{print $NF}' \
+                | sed 's/\^{}$//' \
+                | grep -E "^${release_date}_[0-9]{4}$" \
+                | sort -u
+            )
+            max_sequence=0
+            for existing_tag in "${existing_tags[@]}"; do
+              sequence="${existing_tag##*_}"
+              if (( 10#$sequence > max_sequence )); then
+                max_sequence=$((10#$sequence))
+              fi
+            done
+            next_sequence=$((max_sequence + 1))
+            if (( next_sequence > 9999 )); then
+              echo "Daily release sequence exhausted for $release_date"
+              exit 1
+            fi
+            generated_tag="${tag_prefix}$(printf '%04d' "$next_sequence")"
+            echo "Generated release tag: $generated_tag"
+            echo "tag=$generated_tag" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release_tag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: |
             artifacts/travelnote-web.zip
