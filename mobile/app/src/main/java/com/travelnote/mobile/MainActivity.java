@@ -268,19 +268,14 @@ public class MainActivity extends Activity {
         return card;
     }
 
-    private TextView sectionTitle(String title, String count) {
+    private LinearLayout sectionTitle(String title, String count) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
         TextView left = text(title, 17, INK, true);
         row.addView(left, new LinearLayout.LayoutParams(0, -2, 1));
         TextView right = text(count, 11, MUTED, false);
         row.addView(right);
-        TextView wrapper = text("", 1, INK, false);
-        wrapper.setVisibility(View.GONE);
-        // A horizontal row is returned through a lightweight container-compatible TextView fallback.
-        // The title remains readable and the count is shown in the section header below.
-        left.setText(title + "   " + count);
-        return left;
+        return row;
     }
 
     private Button tagButton(String label) {
@@ -514,8 +509,16 @@ public class MainActivity extends Activity {
             } catch (RuntimeException error) {
                 packet = previous;
                 Log.e(TAG, "渲染导入数据失败", error);
-                renderSafely();
-                showError("数据已解析，但页面展示失败，请清空本地数据后重试");
+                try {
+                    render();
+                } catch (RuntimeException fallbackError) {
+                    Log.e(TAG, "恢复导入前页面失败", fallbackError);
+                    packet = null;
+                    render();
+                }
+                String detail = error.getClass().getSimpleName();
+                if (error.getMessage() != null && !error.getMessage().isEmpty()) detail += ": " + error.getMessage();
+                showError("内容展示失败 [" + detail + "]");
             }
         } catch (Exception e) {
             Log.e(TAG, "导入 TravelNote 数据失败", e);
