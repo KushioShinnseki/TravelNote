@@ -15,6 +15,7 @@ New-Item -ItemType Directory -Force -Path $package | Out-Null
 Copy-Item -LiteralPath (Join-Path $root "dist") -Destination $package -Recurse
 Copy-Item -LiteralPath (Join-Path $root "server") -Destination $package -Recurse
 Copy-Item -LiteralPath (Join-Path $root "deploy") -Destination $package -Recurse
-Copy-Item -LiteralPath (Join-Path $root "Dockerfile"), (Join-Path $root "docker-compose.yml"), (Join-Path $root ".dockerignore"), (Join-Path $root ".env.example"), (Join-Path $root "README.md") -Destination $package
+Copy-Item -LiteralPath (Join-Path $root "src"), (Join-Path $root "public") -Destination $package -Recurse
+Copy-Item -LiteralPath (Join-Path $root "Dockerfile"), (Join-Path $root "docker-compose.yml"), (Join-Path $root ".dockerignore"), (Join-Path $root ".env.example"), (Join-Path $root "README.md"), (Join-Path $root "index.html"), (Join-Path $root "package.json"), (Join-Path $root "package-lock.json"), (Join-Path $root "vite.config.mjs") -Destination $package
 Compress-Archive -Path (Join-Path $package "*") -DestinationPath $zip -CompressionLevel Optimal
 Write-Output $zip

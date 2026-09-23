@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
+import android.util.Log;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.StyleSpan;
@@ -44,6 +45,7 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     private static final int PICK_JSON = 201;
+    private static final String TAG = "TravelNote";
     private static final String PREFS = "travelnote";
     private static final String SAVED_PACKET = "packet";
     private static final int INK = Color.rgb(16, 45, 52);
@@ -62,7 +64,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         packet = loadPacket();
         buildShell();
-        render();
+        renderSafely();
     }
 
     private void buildShell() {
@@ -427,6 +429,7 @@ public class MainActivity extends Activity {
 
     private void scanQr() {
         new IntentIntegrator(this)
+                .setCaptureActivity(TravelNoteCaptureActivity.class)
                 .setDesiredBarcodeFormats(IntentIntegrator.QR_CODE)
                 .setPrompt("扫描网页端 TravelNote 二维码")
                 .setBeepEnabled(false)
@@ -453,7 +456,8 @@ public class MainActivity extends Activity {
 
     private void importPacket(String raw) {
         try {
-            String json = raw.trim();
+            String json = raw == null ? "" : raw.trim();
+            if (json.startsWith("\uFEFF")) json = json.substring(1).trim();
             if (json.startsWith("TN1.")) {
                 String encoded = json.substring(4).replace('-', '+').replace('_', '/');
                 while (encoded.length() % 4 != 0) encoded += "=";
@@ -461,8 +465,7 @@ public class MainActivity extends Activity {
             }
             JSONObject parsed = new JSONObject(json);
             String incomingAccountId = parsed.optString("accountId", "").trim();
-            if (!"travelnote".equals(parsed.optString("format")) || parsed.optInt("version", 0) < 1
-                    || incomingAccountId.isEmpty() || !parsed.has("destinations") || !parsed.has("plans")) {
+            if (!isValidPacket(parsed) || incomingAccountId.isEmpty()) {
                 throw new JSONException("unsupported packet");
             }
             String currentAccountId = packet == null ? "" : packet.optString("accountId", "").trim();
@@ -472,16 +475,34 @@ public class MainActivity extends Activity {
             }
             int[] destinations = countChanges(packet == null ? null : packet.optJSONArray("destinations"), parsed.optJSONArray("destinations"));
             int[] plans = countChanges(packet == null ? null : packet.optJSONArray("plans"), parsed.optJSONArray("plans"));
-            packet = parsed;
-            syncSummary = "地点 新建 " + destinations[0] + " / 更新 " + destinations[1] + " / 删除 " + destinations[2]
-                    + "；日程 新建 " + plans[0] + " / 更新 " + plans[1] + " / 删除 " + plans[2];
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(SAVED_PACKET, parsed.toString()).apply();
-            activeTag = "全部";
-            render();
-            Toast.makeText(this, "TravelNote 数据已导入", Toast.LENGTH_SHORT).show();
+            JSONObject previous = packet;
+            try {
+                packet = parsed;
+                syncSummary = "地点 新建 " + destinations[0] + " / 更新 " + destinations[1] + " / 删除 " + destinations[2]
+                        + "；日程 新建 " + plans[0] + " / 更新 " + plans[1] + " / 删除 " + plans[2];
+                activeTag = "全部";
+                render();
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(SAVED_PACKET, parsed.toString()).commit();
+                Toast.makeText(this, "TravelNote 数据已导入", Toast.LENGTH_SHORT).show();
+            } catch (RuntimeException error) {
+                packet = previous;
+                Log.e(TAG, "渲染导入数据失败", error);
+                renderSafely();
+                throw error;
+            }
         } catch (Exception e) {
+            Log.e(TAG, "导入 TravelNote 数据失败", e);
             showError("这不是有效的 TravelNote 数据包");
         }
+    }
+
+    private boolean isValidPacket(JSONObject value) {
+        return value != null
+                && "travelnote".equals(value.optString("format"))
+                && value.optInt("version", 0) >= 1
+                && !value.optString("accountId", "").trim().isEmpty()
+                && value.optJSONArray("destinations") != null
+                && value.optJSONArray("plans") != null;
     }
 
     private int[] countChanges(JSONArray previous, JSONArray incoming) {
@@ -513,7 +534,27 @@ public class MainActivity extends Activity {
     private JSONObject loadPacket() {
         String value = getSharedPreferences(PREFS, MODE_PRIVATE).getString(SAVED_PACKET, null);
         if (value == null) return null;
-        try { return new JSONObject(value); } catch (JSONException e) { return null; }
+        try {
+            JSONObject saved = new JSONObject(value);
+            if (isValidPacket(saved)) return saved;
+        } catch (JSONException e) {
+            Log.e(TAG, "本地数据包无法解析", e);
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(SAVED_PACKET).commit();
+        return null;
+    }
+
+    private void renderSafely() {
+        try {
+            render();
+        } catch (RuntimeException error) {
+            Log.e(TAG, "渲染本地数据失败，已清理损坏数据包", error);
+            packet = null;
+            syncSummary = "";
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(SAVED_PACKET).commit();
+            render();
+            Toast.makeText(this, "本地数据异常，已恢复到可重新导入状态", Toast.LENGTH_LONG).show();
+        }
     }
 
     private String readAll(InputStream stream) throws IOException {

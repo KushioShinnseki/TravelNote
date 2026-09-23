@@ -39,6 +39,21 @@ chmod +x deploy/start.sh deploy/stop.sh
 
 脚本固定使用 Compose 项目名 `travelnote`，只操作该项目的 Web、API、PostgreSQL 容器和网络，不会停止服务器上的其他 Docker Compose 项目，也不会删除数据库 volume。需要使用其他环境文件或项目名时，可设置 `TRAVELNOTE_ENV_FILE` 或 `TRAVELNOTE_COMPOSE_PROJECT`。
 
+## Vue 前端与多语言
+
+网页前端使用 Vue 3 + Vite 构建，界面通过 `vue-i18n` 支持中文、English 和日本語，默认语言为中文。登录后可在右上角语言选择器切换，选择结果会保存在当前浏览器。
+
+本地开发或修改网页页面时：
+
+```bash
+npm ci
+npm run dev       # 开发服务器
+npm run build     # 生成生产 dist
+npm run package:web
+```
+
+前端源码位于 `src/`，Vite 入口为根目录 `index.html`，生成的 `dist/` 会被 Docker 中的 Nginx 直接提供。CI/CD 会先执行 `npm ci` 和 `npm run build`，再构建 Docker；网页 ZIP 同时包含生成后的 `dist/`、Vue 源码、`package.json`、锁文件和 Vite 配置，方便后续继续开发或在服务器本地重建。
+
 首次启动会从本机 `.env` 自动创建一个初始账号。账号密码不写入 README；需要修改时编辑 `.env`，已存在的账号不会被启动脚本覆盖。网页现在支持注册新账号和登录后修改密码，所有旅行数据 API 都需要当前账号的登录会话，不同账号之间不会共享数据。
 
 ## 环境文件和敏感配置

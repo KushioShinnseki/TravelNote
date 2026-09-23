@@ -75,6 +75,8 @@ CI Promote 成功后会自动将 CD 的 `publish_release` 设置为 `true`。CD 
 
 ### Web Docker 产物
 
+Web 前端使用 Vue 3、Vite 和 `vue-i18n`，支持中文（默认）、English、日本語。CD 在 Docker 构建前执行 `npm ci` 和 `npm run build`，因此发布包中的 `dist/` 与当前 Vue 源码一致。网页 ZIP 还包含 `src/`、`public/`、`index.html`、`package.json`、`package-lock.json` 和 `vite.config.mjs`，服务器可以直接使用已有 `dist/` 启动，也可以在需要修改前端时重新安装依赖并构建。
+
 `travelnote-web.zip` 包含：
 
 - Web 页面 `dist/`

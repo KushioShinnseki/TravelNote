@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "package:web": "powershell -ExecutionPolicy Bypass -File ./scripts/package-web.ps1",
+    "dev": "vite",
+    "build": "vite build",
+    "package:web": "npm run build && powershell -ExecutionPolicy Bypass -File ./scripts/package-web.ps1",
     "docker:build": "docker build --tag travelnote-web:local ."
   },
   "keywords": [],
@@ -12,9 +14,13 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "vue": "^3.5.0",
+    "vue-i18n": "^10.0.0"
   },
   "devDependencies": {
-    "browserify": "^17.0.1"
+    "@vitejs/plugin-vue": "^5.2.0",
+    "browserify": "^17.0.1",
+    "vite": "^6.0.0"
   }
 }
