@@ -16,29 +16,104 @@ const SEED = {
   ]
 };
 
-let state = loadState();
+let state = emptyState();
+let currentAccountId = null;
+const legacyLocalState = localStorage.getItem('travelnote-state-v1');
 let activeView = 'destinations';
 let searchTerm = '';
 let activeFilter = '全部';
 let editingId = null;
 
-function loadState(){
-  try {
-    const saved = JSON.parse(localStorage.getItem('travelnote-state-v1')) || structuredClone(SEED);
-    saved.profile ||= structuredClone(SEED.profile);
-    saved.destinations ||= [];
-    saved.plans ||= [];
-    saved.tagCatalog = [...new Set([...(saved.tagCatalog||[]), ...TAGS, ...saved.destinations.flatMap(item=>item.tags||[])])];
-    return saved;
-  } catch { const fresh=structuredClone(SEED); fresh.tagCatalog=[...TAGS]; return fresh; }
+function emptyState(){ return {profile:{home:''},destinations:[],plans:[],tagCatalog:[]}; }
+function normalizeState(saved={}){
+  const destinations=(Array.isArray(saved.destinations)?saved.destinations:[]).map(item=>({...item,arrangement:item.arrangement||'',note:item.note||'',tags:Array.isArray(item.tags)?item.tags:[]}));
+  return {
+    profile:{...structuredClone(SEED.profile),...(saved.profile||{})},
+    destinations,
+    plans:(Array.isArray(saved.plans)?saved.plans:[]).map(item=>({...item,destinationId:item.destinationId||'',otherDestination:item.otherDestination||'',activity:item.activity||'',note:item.note||''})),
+    tagCatalog:[...new Set([...(saved.tagCatalog||[]),...TAGS,...destinations.flatMap(item=>item.tags||[])])]
+  };
 }
-function persist(){ localStorage.setItem('travelnote-state-v1', JSON.stringify(state)); }
+function loadState(storageKey='travelnote-state-v1'){
+  try { const raw=localStorage.getItem(storageKey); return normalizeState(raw?JSON.parse(raw):SEED); }
+  catch { return normalizeState(SEED); }
+}
+function persist(){ if(currentAccountId) localStorage.setItem(`travelnote-state-v1-${currentAccountId}`, JSON.stringify(state)); }
 function escapeHtml(value=''){ return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch])); }
 function tagHtml(tag){ return `<span class="tag ${TAG_CLASS[tag]||''}">${escapeHtml(tag)}</span>`; }
 function statusClass(status){ return status === '已出发' ? 'dot-green' : status === '已计划' ? 'dot-blue' : 'dot-coral'; }
 function formatDate(date){ const d = new Date(`${date}T00:00:00`); return `${d.getMonth()+1}月${d.getDate()}日`; }
 function formatWeek(date){ const d = new Date(`${date}T00:00:00`); return ['日','一','二','三','四','五','六'][d.getDay()]; }
 function toast(message){ const el=document.querySelector('#toast'); el.textContent=message; el.classList.add('show'); clearTimeout(window.toastTimer); window.toastTimer=setTimeout(()=>el.classList.remove('show'),2400); }
+
+async function apiRequest(path, options={}){
+  const method=(options.method||'GET').toUpperCase();
+  const headers={'Content-Type':'application/json',...(options.headers||{})};
+  if(['POST','PUT','PATCH','DELETE'].includes(method)&&!headers['Idempotency-Key']){
+    headers['Idempotency-Key']=window.crypto?.randomUUID?.()||`tn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+  return fetch(path,{credentials:'same-origin',...options,headers});
+}
+function showAuthError(message, target='login-error'){ const el=document.querySelector(`#${target}`); if(el)el.textContent=message||''; }
+function setAuthMode(mode){
+  const register=mode==='register';
+  document.querySelector('#login-form').hidden=register;
+  document.querySelector('#register-form').hidden=!register;
+  document.querySelector('#auth-title').textContent=register?'创建你的旅途账号':'登录你的旅途';
+  document.querySelector('#auth-description').textContent=register?'创建后即可拥有独立的地点、标签和日程空间。':'仅限本地账号访问。地点、路线和日程不会被上传到公开服务。';
+  document.querySelector('#register-toggle').textContent=register?'已有账号？返回登录':'还没有账号？注册';
+  showAuthError('', 'login-error');
+  showAuthError('', 'register-error');
+}
+function showApp(){ document.querySelector('#auth-gate').hidden=true; render(); }
+async function syncWorkspace(){
+  const response=await apiRequest('/api/workspace',{method:'PUT',body:JSON.stringify(buildPacket())});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok) throw new Error(data.message||'保存旅行数据失败');
+  return normalizeState(data);
+}
+async function loadAccountWorkspace(account){
+  currentAccountId=String(account.id);
+  const response=await apiRequest('/api/workspace');
+  const remote=await response.json().catch(()=>({}));
+  if(!response.ok) throw new Error(remote.message||'读取旅行数据失败');
+  const accountKey=`travelnote-state-v1-${currentAccountId}`;
+  const hasAccountLocal=Boolean(localStorage.getItem(accountKey));
+  if(!remote.destinations?.length&&!remote.plans?.length&&!hasAccountLocal&&legacyLocalState){
+    state=loadState('travelnote-state-v1');
+    state=await syncWorkspace();
+    localStorage.removeItem('travelnote-state-v1');
+  }else{
+    state=normalizeState(remote);
+  }
+  persist();
+}
+async function commitWorkspace(mutator, message){
+  const previous=structuredClone(state);
+  mutator();
+  try{
+    state=await syncWorkspace();
+    persist();
+    render();
+    toast(message);
+  }catch(error){
+    state=previous;
+    render();
+    toast(error.message||'保存失败，请稍后重试');
+  }
+}
+async function bootstrapAuth(){
+  try {
+    const response=await apiRequest('/api/auth/me');
+    if(response.ok){
+      const data=await response.json();
+      await loadAccountWorkspace(data.account);
+      showApp();
+      return;
+    }
+  } catch(error){ showAuthError(error.message||'无法加载旅行数据'); }
+  document.querySelector('#auth-gate').hidden=false;
+}
 
 function render(){
   document.querySelector('#destination-count').textContent=String(state.destinations.length).padStart(2,'0');
@@ -66,11 +141,11 @@ function destinationsView(){
   </section>`;
 }
 
-function cardHtml(item){ return `<article class="destination-card"><div class="card-topline"><div class="card-pin ${item.tags.includes('自然风光')?'green':item.tags.includes('美食探索')?'gold':'blue'}">⌖</div><div class="card-actions"><button class="small-icon" data-edit="${item.id}" aria-label="编辑 ${escapeHtml(item.name)}">✎</button><button class="small-icon" data-delete="${item.id}" aria-label="删除 ${escapeHtml(item.name)}">×</button></div></div><h3>${escapeHtml(item.name)}</h3><div class="region">${escapeHtml(item.region)} · ${escapeHtml(item.location)}</div><div class="tag-list">${item.tags.map(tagHtml).join('')}</div><div class="transport-line"><span>⇢</span><span>${escapeHtml(item.transport)}</span></div><div class="card-footer"><span class="status-label"><i class="dot ${statusClass(item.status)}"></i>${escapeHtml(item.status)}</span><span>${escapeHtml(item.note||'')}</span></div></article>`; }
+function cardHtml(item){ return `<article class="destination-card"><div class="card-topline"><div class="card-pin ${item.tags.includes('自然风光')?'green':item.tags.includes('美食探索')?'gold':'blue'}">⌖</div><div class="card-actions"><button class="small-icon" data-edit="${item.id}" aria-label="编辑 ${escapeHtml(item.name)}">✎</button><button class="small-icon" data-delete="${item.id}" aria-label="删除 ${escapeHtml(item.name)}">×</button></div></div><h3>${escapeHtml(item.name)}</h3><div class="region">${escapeHtml(item.region)} · ${escapeHtml(item.location)}</div><div class="tag-list">${item.tags.map(tagHtml).join('')}</div><div class="transport-line"><span>⇢</span><span>${escapeHtml(item.transport)}</span></div>${item.arrangement?`<div class="transport-line"><span>▣</span><span>${escapeHtml(item.arrangement)}</span></div>`:''}<div class="card-footer"><span class="status-label"><i class="dot ${statusClass(item.status)}"></i>${escapeHtml(item.status)}</span><span>${escapeHtml(item.note||'')}</span></div></article>`; }
 
 function plansView(){
   const sorted=[...state.plans].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
-  return `<section class="view-section active"><div class="plans-header"><div><span class="eyebrow">Your itinerary</span><h2>日程安排</h2></div><button class="primary-button" id="add-plan"><span class="plus">+</span>新增安排</button></div><div class="plan-list">${sorted.length ? sorted.map(plan=>`<article class="plan-row"><div class="plan-date"><strong>${formatDate(plan.date)}</strong><br>周${formatWeek(plan.date)}</div><div><h3>${escapeHtml(plan.destination)}</h3><p>${escapeHtml(plan.activity)}</p></div><time>${escapeHtml(plan.time)}</time></article>`).join('') : `<div class="empty-state"><strong>还没有安排</strong><span>给某个日期留下一点期待。</span></div>`}</div></section>`;
+  return `<section class="view-section active"><div class="plans-header"><div><span class="eyebrow">Your itinerary</span><h2>日程安排</h2></div><button class="primary-button" id="add-plan"><span class="plus">+</span>新增安排</button></div><div class="plan-list">${sorted.length ? sorted.map(plan=>`<article class="plan-row"><div class="plan-date"><strong>${formatDate(plan.date)}</strong><br>周${formatWeek(plan.date)}</div><div><h3>${escapeHtml(plan.destination)}</h3><p>${escapeHtml(plan.activity)}</p>${plan.note?`<small>${escapeHtml(plan.note)}</small>`:''}</div><time>${escapeHtml(plan.time)}</time></article>`).join('') : `<div class="empty-state"><strong>还没有安排</strong><span>给某个日期留下一点期待。</span></div>`}</div></section>`;
 }
 
 function exchangeView(){
@@ -122,33 +197,39 @@ function bindViewEvents(){
   if(activeView==='exchange') drawQr(document.querySelector('#qr-canvas'),encodePacket(buildPacket()));
 }
 
-function openDestinationModal(id=null){ editingId=id; const modal=document.querySelector('#destination-modal'),form=document.querySelector('#destination-form'); const item=state.destinations.find(x=>x.id===id); form.reset(); form.elements.id.value=id||''; form.elements.name.value=item?.name||'';form.elements.region.value=item?.region||'';form.elements.location.value=item?.location||'';form.elements.transport.value=item?.transport||'';form.elements.note.value=item?.note||'';document.querySelector('#destination-modal-title').textContent=id?'编辑旅行灵感':'添加想去的地方';document.querySelector('#form-tags').innerHTML=state.tagCatalog.map(tag=>`<button type="button" class="tag-choice ${(item?.tags||[]).includes(tag)?'selected':''}" data-form-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('');document.querySelectorAll('[data-form-tag]').forEach(btn=>btn.addEventListener('click',()=>btn.classList.toggle('selected'))); modal.hidden=false; form.elements.name.focus(); }
-function openPlanModal(){ const modal=document.querySelector('#plan-modal'),form=document.querySelector('#plan-form');form.reset();form.elements.date.value='2026-10-10';modal.hidden=false;form.elements.destination.focus(); }
+function openDestinationModal(id=null){ editingId=id; const modal=document.querySelector('#destination-modal'),form=document.querySelector('#destination-form'); const item=state.destinations.find(x=>x.id===id); form.reset(); form.elements.id.value=id||''; form.elements.name.value=item?.name||'';form.elements.region.value=item?.region||'';form.elements.location.value=item?.location||'';form.elements.transport.value=item?.transport||'';form.elements.arrangement.value=item?.arrangement||'';form.elements.note.value=item?.note||'';document.querySelector('#destination-modal-title').textContent=id?'编辑旅行灵感':'添加想去的地方';document.querySelector('#form-tags').innerHTML=state.tagCatalog.map(tag=>`<button type="button" class="tag-choice ${(item?.tags||[]).includes(tag)?'selected':''}" data-form-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('');document.querySelectorAll('[data-form-tag]').forEach(btn=>btn.addEventListener('click',()=>btn.classList.toggle('selected'))); modal.hidden=false; form.elements.name.focus(); }
+function openPlanModal(){ const modal=document.querySelector('#plan-modal'),form=document.querySelector('#plan-form');form.reset();form.elements.date.value='2026-10-10';form.elements.destinationId.innerHTML='<option value="">不选择已有地点</option>'+state.destinations.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${escapeHtml(item.region)}</option>`).join('');modal.hidden=false;form.elements.destinationId.focus(); }
 function closeModals(){document.querySelectorAll('.modal-backdrop').forEach(m=>m.hidden=true)}
-function deleteDestination(id){ const item=state.destinations.find(x=>x.id===id); if(!item||!confirm(`确定删除“${item.name}”吗？`))return;state.destinations=state.destinations.filter(x=>x.id!==id);persist();render();toast('已删除这条旅行灵感'); }
-function addTag(e){ e.preventDefault(); const input=e.target.elements.tag, tag=input.value.trim(); if(!tag)return; if(state.tagCatalog.includes(tag)){toast('这个标签已经存在');return;} state.tagCatalog.push(tag);persist();render();toast(`已添加标签“${tag}”`); }
-function deleteTag(tag){ if(!tag||TAGS.includes(tag))return; if(!confirm(`删除标签“${tag}”？已使用它的地点也会移除这个标签。`))return; state.tagCatalog=state.tagCatalog.filter(item=>item!==tag);state.destinations.forEach(item=>{item.tags=(item.tags||[]).filter(itemTag=>itemTag!==tag)});persist();render();toast(`已删除标签“${tag}”`); }
+function deleteDestination(id){ const item=state.destinations.find(x=>x.id===id); if(!item||!confirm(`确定删除“${item.name}”吗？`))return;commitWorkspace(()=>{state.destinations=state.destinations.filter(x=>x.id!==id)},'已删除这条旅行灵感'); }
+function addTag(e){ e.preventDefault(); const input=e.target.elements.tag, tag=input.value.trim(); if(!tag)return; if(state.tagCatalog.includes(tag)){toast('这个标签已经存在');return;} commitWorkspace(()=>state.tagCatalog.push(tag),`已添加标签“${tag}”`); input.value=''; }
+function deleteTag(tag){ if(!tag||TAGS.includes(tag))return; if(!confirm(`删除标签“${tag}”？已使用它的地点也会移除这个标签。`))return; commitWorkspace(()=>{state.tagCatalog=state.tagCatalog.filter(item=>item!==tag);state.destinations.forEach(item=>{item.tags=(item.tags||[]).filter(itemTag=>itemTag!==tag)})},`已删除标签“${tag}”`); }
 function downloadBackup(){ const blob=new Blob([JSON.stringify(buildPacket(),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`travelnote-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(url);toast('数据包已下载'); }
-function handleImport(e){const file=e.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const data=JSON.parse(reader.result);if(data.format!=='travelnote'||!Array.isArray(data.destinations)||!Array.isArray(data.plans))throw new Error('invalid');state={profile:data.profile||SEED.profile,tagCatalog:[...new Set([...(data.tagCatalog||[]),...TAGS,...data.destinations.flatMap(item=>item.tags||[])])],destinations:data.destinations,plans:data.plans};persist();render();toast(`已导入 ${state.destinations.length} 个地点和 ${state.plans.length} 个安排`)}catch{toast('文件格式不正确，请选择 TravelNote 数据包')}};reader.readAsText(file);e.target.value='';}
+function handleImport(e){const file=e.target.files?.[0];if(!file)return;const reader=new FileReader();reader.onload=async()=>{try{const data=JSON.parse(reader.result);if(data.format!=='travelnote'||!Array.isArray(data.destinations)||!Array.isArray(data.plans))throw new Error('invalid');const previous=state;state=normalizeState(data);try{state=await syncWorkspace();persist();render();toast(`已导入 ${state.destinations.length} 个地点和 ${state.plans.length} 个安排`)}catch(error){state=previous;render();toast(error.message||'导入保存失败')}}catch{toast('文件格式不正确，请选择 TravelNote 数据包')}};reader.readAsText(file);e.target.value='';}
 
 document.addEventListener('click',e=>{
   const nav=e.target.closest('[data-view]'); if(nav){activeView=nav.dataset.view;searchTerm='';activeFilter='全部';document.querySelectorAll('.nav-item').forEach(item=>item.classList.toggle('active',item===nav));render();}
   const quick=e.target.closest('[data-filter]'); if(quick){activeView='destinations';activeFilter=quick.dataset.filter;document.querySelectorAll('.nav-item').forEach(item=>item.classList.toggle('active',item.dataset.view===activeView));render();}
   if(e.target.matches('[data-close-modal]')||e.target.classList.contains('modal-backdrop'))closeModals();
 });
-document.querySelector('#destination-form').addEventListener('submit',e=>{e.preventDefault();const f=e.target,selected=[...document.querySelectorAll('[data-form-tag].selected')].map(el=>el.dataset.formTag);const item={id:editingId||`d${Date.now()}`,name:f.elements.name.value.trim(),region:f.elements.region.value.trim(),location:f.elements.location.value.trim(),tags:selected.length?selected:['周末短途'],transport:f.elements.transport.value.trim()||'从出发地出发，路线待补充。',note:f.elements.note.value.trim(),status:'想去'};if(editingId){const old=state.destinations.find(x=>x.id===editingId);Object.assign(old,item,{status:old.status})}else state.destinations.unshift(item);persist();closeModals();render();toast(editingId?'已更新旅行灵感':'已添加到旅行灵感');});
-document.querySelector('#plan-form').addEventListener('submit',e=>{e.preventDefault();const f=e.target;state.plans.push({id:`p${Date.now()}`,date:f.elements.date.value,time:f.elements.time.value,destination:f.elements.destination.value.trim(),activity:f.elements.activity.value.trim()});persist();closeModals();render();toast('已加入日程安排');});
+document.querySelector('#destination-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.target,selected=[...document.querySelectorAll('[data-form-tag].selected')].map(el=>el.dataset.formTag);const item={id:editingId||`d${Date.now()}`,name:f.elements.name.value.trim(),region:f.elements.region.value.trim(),location:f.elements.location.value.trim(),tags:selected.length?selected:['周末短途'],transport:f.elements.transport.value.trim()||'从出发地出发，路线待补充。',arrangement:f.elements.arrangement.value.trim(),note:f.elements.note.value.trim(),status:'想去'};const message=editingId?'已更新旅行灵感':'已添加到旅行灵感';await commitWorkspace(()=>{if(editingId){const old=state.destinations.find(x=>x.id===editingId);Object.assign(old,item,{status:old.status})}else state.destinations.unshift(item)},message);closeModals();});
+document.querySelector('#plan-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.target,selected=state.destinations.find(item=>item.id===f.elements.destinationId.value),other=f.elements.otherDestination.value.trim();if(!selected&&!other){toast('请选择已有旅游点，或填写其他地点');return;}await commitWorkspace(()=>state.plans.push({id:`p${Date.now()}`,date:f.elements.date.value,time:f.elements.time.value,destinationId:selected?.id||'',destination:selected?.name||other,otherDestination:other,activity:f.elements.activity.value.trim(),note:f.elements.note.value.trim()}),'已加入日程安排');closeModals();});
 document.querySelector('#rail-add-plan').addEventListener('click',openPlanModal);
-document.querySelector('#edit-home').addEventListener('click',()=>{const next=prompt('填写你的常用出发地',state.profile.home);if(next?.trim()){state.profile.home=next.trim();persist();render();toast('出发地已更新')}});
+document.querySelector('#edit-home').addEventListener('click',()=>{const next=prompt('填写你的常用出发地',state.profile.home);if(next?.trim())commitWorkspace(()=>{state.profile.home=next.trim()},'出发地已更新')});
 document.querySelector('.mobile-menu').addEventListener('click',()=>document.querySelector('.sidebar').classList.toggle('open'));
 document.querySelector('#notification-button').addEventListener('click',()=>toast('今天没有新的提醒'));
 document.querySelector('#search-toggle').addEventListener('click',()=>document.querySelector('#destination-search')?.focus());
+document.querySelector('#logout-button').addEventListener('click',async()=>{await apiRequest('/api/auth/logout',{method:'POST'});currentAccountId=null;state=emptyState();setAuthMode('login');document.querySelector('#auth-gate').hidden=false;toast('已退出登录')});
+document.querySelector('#register-toggle').addEventListener('click',()=>setAuthMode(document.querySelector('#register-form').hidden?'register':'login'));
+document.querySelector('#login-form').addEventListener('submit',async e=>{e.preventDefault();const form=e.target,button=form.querySelector('button[type="submit"]');showAuthError('');button.disabled=true;try{const response=await apiRequest('/api/auth/login',{method:'POST',body:JSON.stringify({username:form.elements.username.value,password:form.elements.password.value})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'登录失败');await loadAccountWorkspace(data.account);form.reset();showApp();}catch(error){showAuthError(error.message)}finally{button.disabled=false}});
+document.querySelector('#register-form').addEventListener('submit',async e=>{e.preventDefault();const form=e.target,button=form.querySelector('button[type="submit"]'),password=form.elements.password.value;if(password!==form.elements.confirmPassword.value){showAuthError('两次输入的密码不一致','register-error');return;}showAuthError('','register-error');button.disabled=true;try{const response=await apiRequest('/api/auth/register',{method:'POST',body:JSON.stringify({username:form.elements.username.value,password})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'注册失败');await loadAccountWorkspace(data.account);form.reset();showApp();toast('账号创建成功');}catch(error){showAuthError(error.message,'register-error')}finally{button.disabled=false}});
+document.querySelector('#change-password-button').addEventListener('click',()=>{const form=document.querySelector('#password-form');form.reset();showAuthError('','password-error');document.querySelector('#password-modal').hidden=false;form.elements.currentPassword.focus()});
+document.querySelector('#password-form').addEventListener('submit',async e=>{e.preventDefault();const form=e.target,button=form.querySelector('button[type="submit"]');showAuthError('','password-error');if(form.elements.newPassword.value!==form.elements.confirmPassword.value){showAuthError('两次输入的新密码不一致','password-error');return;}button.disabled=true;try{const response=await apiRequest('/api/auth/change-password',{method:'POST',body:JSON.stringify({currentPassword:form.elements.currentPassword.value,newPassword:form.elements.newPassword.value})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'修改密码失败');closeModals();form.reset();toast('密码已修改');}catch(error){showAuthError(error.message,'password-error')}finally{button.disabled=false}});
 
-render();
+bootstrapAuth();
 
 // WebMCP: expose the same user-facing actions to compatible AI agents.
 if(document.modelContext?.registerTool){
   const lifecycle=new AbortController();
-  Promise.resolve(document.modelContext.registerTool({name:'add_travel_destination',title:'添加旅行地点',description:'添加一个想去的地方，并保存它的地区、理由标签和从出发地出发的交通方式。',inputSchema:{type:'object',properties:{name:{type:'string'},region:{type:'string'},location:{type:'string'},tags:{type:'array',items:{type:'string'}},transport:{type:'string'},note:{type:'string'}},required:['name','region','transport'],additionalProperties:false},annotations:{readOnlyHint:false},execute(input){const item={id:`d${Date.now()}`,name:input.name,region:input.region,location:input.location||'',tags:input.tags?.length?input.tags:['周末短途'],transport:input.transport,note:input.note||'',status:'想去'};state.destinations.unshift(item);persist();render();toast('已通过智能助手添加旅行地点');return {id:item.id,name:item.name,status:'saved'};}},{signal:lifecycle.signal})).catch(()=>{});
+  Promise.resolve(document.modelContext.registerTool({name:'add_travel_destination',title:'添加旅行地点',description:'添加一个想去的地方，并保存它的地区、理由标签和从出发地出发的交通方式。',inputSchema:{type:'object',properties:{name:{type:'string'},region:{type:'string'},location:{type:'string'},tags:{type:'array',items:{type:'string'}},transport:{type:'string'},note:{type:'string'}},required:['name','region','transport'],additionalProperties:false},annotations:{readOnlyHint:false},async execute(input){const item={id:`d${Date.now()}`,name:input.name,region:input.region,location:input.location||'',tags:input.tags?.length?input.tags:['周末短途'],transport:input.transport,note:input.note||'',status:'想去'};await commitWorkspace(()=>state.destinations.unshift(item),'已通过智能助手添加旅行地点');return {id:item.id,name:item.name,status:'saved'};}},{signal:lifecycle.signal})).catch(()=>{});
   window.addEventListener('beforeunload',()=>lifecycle.abort(),{once:true});
 }

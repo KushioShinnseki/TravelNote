@@ -10,6 +10,28 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <div class="auth-gate" id="auth-gate">
+      <div class="auth-card">
+        <div class="brand-mark auth-brand"><span class="brand-dot"></span><span>Travel<span>Note</span></span></div>
+        <span class="eyebrow">Private travel workspace</span>
+        <h1 id="auth-title">登录你的旅途</h1>
+        <p id="auth-description">仅限本地账号访问。地点、路线和日程不会被上传到公开服务。</p>
+        <form id="login-form">
+          <label>账号<input name="username" autocomplete="username" required placeholder="输入账号" /></label>
+          <label>密码<input name="password" type="password" autocomplete="current-password" required placeholder="输入密码" /></label>
+          <div class="login-error" id="login-error" role="alert"></div>
+          <button class="primary-button" type="submit">登录 TravelNote</button>
+        </form>
+        <form id="register-form" hidden>
+          <label>账号<input name="username" autocomplete="username" minlength="3" maxlength="120" required placeholder="3-120 位字母、数字或中文" /></label>
+          <label>密码<input name="password" type="password" autocomplete="new-password" minlength="8" maxlength="200" required placeholder="至少 8 位" /></label>
+          <label>确认密码<input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="200" required placeholder="再次输入密码" /></label>
+          <div class="login-error" id="register-error" role="alert"></div>
+          <button class="primary-button" type="submit">创建账号</button>
+        </form>
+        <button class="auth-switch" id="register-toggle" type="button">还没有账号？注册</button>
+      </div>
+    </div>
     <div class="app-shell">
       <aside class="sidebar" aria-label="主导航">
         <div class="brand-mark"><span class="brand-dot"></span><span>Travel<span>Note</span></span></div>
@@ -33,7 +55,7 @@
         </div>
         <div class="sidebar-bottom">
           <div class="offline-pill"><span class="offline-dot"></span>离线模式已开启</div>
-          <button class="settings-link"><span>⚙</span> 偏好设置</button>
+          <button class="settings-link" id="change-password-button"><span>⚙</span> 修改密码</button>
         </div>
       </aside>
 
@@ -44,7 +66,7 @@
           <div class="topbar-actions">
             <button class="icon-button" id="search-toggle" aria-label="搜索">⌕</button>
             <button class="icon-button" id="notification-button" aria-label="通知">♧<em></em></button>
-            <div class="mini-avatar">林</div>
+            <button class="mini-avatar" id="logout-button" aria-label="退出登录">林</button>
           </div>
         </header>
 
@@ -75,7 +97,8 @@
           <div class="form-section-label">为什么想去 <span>可多选</span></div>
           <div class="tag-picker" id="form-tags"></div>
           <label>从出发地怎么去<textarea name="transport" rows="3" placeholder="例如：虹桥站 → 杭州东站，约 45 分钟；落地后地铁 2 号线。"></textarea></label>
-          <label>补充备注<textarea name="note" rows="2" placeholder="想看的展览、想吃的店，或任何随手记下的念头"></textarea></label>
+          <label>旅行安排<textarea name="arrangement" rows="3" placeholder="例如：第一天逛古城，第二天去周边景点"></textarea></label>
+          <label>补充说明<textarea name="note" rows="2" placeholder="想看的展览、想吃的店，或任何随手记下的念头"></textarea></label>
           <div class="modal-footer"><button type="button" class="text-button" data-close-modal>取消</button><button type="submit" class="primary-button">保存地点</button></div>
         </form>
       </section>
@@ -86,9 +109,24 @@
         <div class="modal-header"><div><span class="eyebrow">日程安排</span><h2 id="plan-modal-title">安排一天</h2></div><button class="close-button" data-close-modal>×</button></div>
         <form id="plan-form">
           <div class="form-grid two-col"><label>日期<input name="date" type="date" required /></label><label>时间<input name="time" type="time" value="09:00" /></label></div>
-          <label>去哪里<input name="destination" required placeholder="例如：京都·岚山" /></label>
+          <label>选择旅游点<select name="destinationId"><option value="">不选择已有地点</option></select></label>
+          <label>其他地点<input name="otherDestination" placeholder="如果列表中没有，请填写其他地点" /></label>
           <label>这一天做什么<textarea name="activity" rows="3" required placeholder="安排、路线或想完成的事情"></textarea></label>
+          <label>补充说明<textarea name="note" rows="2" placeholder="预约信息、同行人或当天的其他说明"></textarea></label>
           <div class="modal-footer"><button type="button" class="text-button" data-close-modal>取消</button><button type="submit" class="primary-button">加入日程</button></div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="password-modal" hidden>
+      <section class="modal small-modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title">
+        <div class="modal-header"><div><span class="eyebrow">Account security</span><h2 id="password-modal-title">修改密码</h2></div><button class="close-button" data-close-modal>×</button></div>
+        <form id="password-form">
+          <label>当前密码<input name="currentPassword" type="password" autocomplete="current-password" required /></label>
+          <label>新密码<input name="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="200" required placeholder="至少 8 位" /></label>
+          <label>确认新密码<input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="200" required /></label>
+          <div class="login-error" id="password-error" role="alert"></div>
+          <div class="modal-footer"><button type="button" class="text-button" data-close-modal>取消</button><button type="submit" class="primary-button">保存新密码</button></div>
         </form>
       </section>
     </div>
