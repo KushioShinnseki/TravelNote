@@ -32,6 +32,9 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Validate deployment scripts
+        run: bash -n deploy/start.sh deploy/stop.sh deploy/setup-nginx.sh
+
       - name: Build Docker stack
         env:
           POSTGRES_DB: travelnote
@@ -41,6 +44,9 @@ jobs:
           SEED_ADMIN_USERNAME: Kushio4967
           SEED_ADMIN_PASSWORD: ci-only-admin-password
         run: docker compose build
+
+      - name: Validate built Nginx image
+        run: docker run --rm travelnote-web:local nginx -t
 
       - name: Smoke test Docker stack
         env:

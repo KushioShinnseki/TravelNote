@@ -81,10 +81,13 @@ CI Promote 成功后会自动将 CD 的 `publish_release` 设置为 `true`。CD 
 - API 服务 `server/`
 - Nginx 配置 `deploy/`
 - Ubuntu 启停脚本 `deploy/start.sh`、`deploy/stop.sh`
+- Ubuntu 域名 HTTPS 配置脚本 `deploy/setup-nginx.sh`
 - `Dockerfile`
 - `docker-compose.yml`
 - `.env.example`
 - Docker 构建所需的完整源码；服务器启动时本地构建 Web 和 API 镜像
+
+Web 容器使用 `nginx:1.27-alpine`，监听容器 80 端口并通过 Compose 映射到服务器 8080 端口。容器 Nginx 会把 `/api/` 转发到 `api:3000`，其他请求返回前端页面。需要标准端口时，服务器上执行 `deploy/setup-nginx.sh`，宿主机 Nginx 会监听 80/443，并将 HTTPS 请求转发到 Docker 的 8080 端口。域名通过服务器 `.env` 的 `TRAVELNOTE_DOMAIN` 配置，证书由 Certbot 自动申请和续期。CD 构建阶段会校验容器 Nginx 和部署脚本，配置错误时不会生成发布包。
 
 ### Android 产物
 

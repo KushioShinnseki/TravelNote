@@ -12,11 +12,22 @@ docker compose up --build
 
 `travelnote-web.zip` 是完整 Web Docker 源码部署包，包含 `dist` 页面、`server` API、Nginx 配置、Docker Compose 配置、`.env.example` 和 Ubuntu 启停脚本，不包含预构建 Docker 镜像。解压后填写 `.env`，启动脚本会在服务器本地构建镜像：
 
+网页容器 `travelnote-web` 内置 Nginx：负责提供前端页面，并将 `/api/` 请求转发给 API 容器。Docker Web 服务默认监听服务器 8080 端口；如果需要使用标准的 80/443 端口，使用 ZIP 中的 `deploy/setup-nginx.sh` 配置宿主机 Nginx，让域名通过 HTTPS 转发到 `127.0.0.1:8080`。容器配置位于 `deploy/nginx.conf`，CI/CD 会校验容器 Nginx 和宿主机 Nginx 脚本。
+
 ```bash
 cp .env.example .env
-chmod +x deploy/start.sh deploy/stop.sh
+chmod +x deploy/start.sh deploy/stop.sh deploy/setup-nginx.sh
 ./deploy/start.sh
 ```
+
+配置域名和 HTTPS（首次部署或域名变更时执行）：
+
+```bash
+# 编辑 .env，填写 TRAVELNOTE_DOMAIN 和 LETSENCRYPT_EMAIL
+sudo ./deploy/setup-nginx.sh
+```
+
+执行前请确认域名 A/CNAME 已解析到服务器，并在云安全组和系统防火墙中放行 TCP 80、443。该脚本只创建和更新 `travelnote` 这一个 Nginx 站点，不会停止其他 Docker 或 Nginx 服务。域名、邮箱和证书私钥只保存在服务器，不会进入 GitHub Release；当前 CD 是打包发布流程，不会自动把 GitHub Secrets 注入服务器。
 
 Ubuntu 服务器也可以使用 ZIP 中的脚本启动和停止服务：
 
@@ -54,6 +65,8 @@ Copy-Item .env.example .env
 | `JWT_SECRET` | Web 登录会话签名密钥 |
 | `SEED_ADMIN_USERNAME` | 首次启动时创建的初始账号 |
 | `SEED_ADMIN_PASSWORD` | 首次启动时创建的初始账号密码 |
+| `TRAVELNOTE_DOMAIN` | 宿主机 Nginx 使用的域名 |
+| `LETSENCRYPT_EMAIL` | Certbot 证书通知邮箱 |
 
 `.env` 中的初始账号只在账号不存在时创建，后续不会覆盖已有账号密码。`.env` 不会被复制进 Docker 镜像或完整 Web ZIP，发布包只包含 `.env.example`。本项目按本地/私有网络使用设计，不要把示例密码和弱密钥用于公开部署。
 
