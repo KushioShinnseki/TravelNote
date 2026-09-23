@@ -156,6 +156,9 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/') || inputs.publish_release == true
     runs-on: ubuntu-latest
+    concurrency:
+      group: travelnote-release-${{ github.repository }}
+      cancel-in-progress: false
     steps:
       - name: Download CD artifacts
         uses: actions/download-artifact@v7
@@ -167,7 +170,7 @@ jobs:
         id: release_tag
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
@@ -175,10 +178,9 @@ jobs:
             release_date="$(TZ=Asia/Shanghai date +%Y%m%d)"
             tag_prefix="${release_date}_"
             mapfile -t existing_tags < <(
-              git -c "http.extraheader=AUTHORIZATION: bearer $GH_TOKEN" \
-                ls-remote --tags "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/${tag_prefix}*" \
-                | awk -F/ '{print $NF}' \
-                | sed 's/\^{}$//' \
+              gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/${tag_prefix}" \
+                --jq '.[].ref' \
+                | sed 's#^refs/tags/##' \
                 | grep -E "^${release_date}_[0-9]{4}$" \
                 | sort -u
             )
