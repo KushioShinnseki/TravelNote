@@ -1,0 +1,57 @@
+<view class="page">
+  <view class="hero">
+    <view class="brand"><view class="brand-dot"></view><text>TravelNote</text></view>
+    <text class="hero-title">把下一站带在身边</text>
+    <text class="hero-subtitle">离线查看网页端同步的地点、交通和日程</text>
+    <button class="scan-button" bindtap="scan">扫码同步数据</button>
+  </view>
+
+  <view class="account-card" wx:if="{{state.accountId}}">
+    <text class="muted">当前账号 ID</text>
+    <text class="account-id">{{state.accountId}}</text>
+    <text class="muted">出发地：{{state.profile.home || '未设置'}}</text>
+  </view>
+  <view class="account-card empty-account" wx:else>
+    <text class="account-id">尚未绑定账号</text>
+    <text class="muted">请从网页端打开“离线交换”，扫描当前账号二维码。</text>
+  </view>
+
+  <view class="tabs">
+    <button class="tab {{tab == 'destinations' ? 'active' : ''}}" data-tab="destinations" bindtap="switchTab">旅行地点</button>
+    <button class="tab {{tab == 'plans' ? 'active' : ''}}" data-tab="plans" bindtap="switchTab">日程安排</button>
+    <button class="tab {{tab == 'settings' ? 'active' : ''}}" data-tab="settings" bindtap="switchTab">设置</button>
+  </view>
+
+  <view wx:if="{{tab == 'destinations'}}">
+    <view class="section-heading"><text>想去的地方</text><text class="count">{{destinations.length}}</text></view>
+    <view class="empty-card" wx:if="{{!hasData}}">还没有数据，请先扫描网页端二维码。</view>
+    <block wx:for="{{destinations}}" wx:key="id">
+      <view class="destination-card">
+        <view class="card-heading"><text class="destination-name">{{item.name}}</text><text class="status">{{item.status}}</text></view>
+        <text class="region">{{item.regionText}}</text>
+        <text class="tags" wx:if="{{item.tagsText}}">{{item.tagsText}}</text>
+        <view class="info" wx:if="{{item.transport}}"><text class="info-label">交通</text><text>{{item.transport}}</text></view>
+        <view class="info" wx:if="{{item.arrangement}}"><text class="info-label">安排</text><text>{{item.arrangement}}</text></view>
+        <view class="info note" wx:if="{{item.note}}"><text class="info-label">说明</text><text>{{item.note}}</text></view>
+      </view>
+    </block>
+  </view>
+
+  <view wx:if="{{tab == 'plans'}}">
+    <view class="section-heading"><text>日程安排</text><text class="count">{{plans.length}}</text></view>
+    <view class="empty-card" wx:if="{{plans.length == 0}}">还没有日程安排。</view>
+    <block wx:for="{{plans}}" wx:key="id">
+      <view class="plan-card">
+        <view class="plan-date"><text>{{item.dateText}}</text><text>{{item.time}}</text></view>
+        <view class="plan-content"><text class="destination-name">{{item.destinationText}}</text><text>{{item.activity}}</text><text class="note" wx:if="{{item.note}}">说明：{{item.note}}</text></view>
+      </view>
+    </block>
+  </view>
+
+  <view wx:if="{{tab == 'settings'}}">
+    <view class="section-heading"><text>离线同步</text></view>
+    <view class="settings-card"><text class="muted">最近同步</text><text>{{lastSync}}</text><text class="sync-summary" wx:if="{{syncSummary}}">{{syncSummary}}</text></view>
+    <button class="danger-button" bindtap="clearBinding">清空本地数据并重新绑定</button>
+    <text class="footnote">此操作只清除手机端缓存，不会删除网页端数据库。清空后再次扫描二维码即可重新获取账号数据。</text>
+  </view>
+</view>

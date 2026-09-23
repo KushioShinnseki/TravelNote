@@ -1,0 +1,10 @@
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "window": {
+    "defaultTitle": "TravelNote",
+    "titleBarColor": "#102d34",
+    "pullRefresh": false
+  }
+}

@@ -30,6 +30,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 public class MainActivity extends Activity {
     private static final int PICK_JSON = 201;
@@ -44,6 +48,7 @@ public class MainActivity extends Activity {
     private LinearLayout content;
     private JSONObject packet;
     private String activeTag = "全部";
+    private String syncSummary = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -116,7 +121,7 @@ public class MainActivity extends Activity {
         LinearLayout note = card();
         note.setBackgroundColor(Color.rgb(232, 238, 232));
         note.addView(text("数据边界", 13, INK, true), marginParams(0, 0, 0, 5));
-        note.addView(text("手机端只接受 format=travelnote 的数据包，不会上传或同步其他内容。", 12, MUTED, false));
+        note.addView(text("手机端只接受包含账号 ID 的 TravelNote 数据包，不会上传或同步其他内容。", 12, MUTED, false));
         content.addView(note);
     }
 
@@ -138,6 +143,8 @@ public class MainActivity extends Activity {
 
         String home = profile == null ? "" : profile.optString("home", "");
         content.addView(text(home.isEmpty() ? "已导入的旅行数据" : "出发地 · " + home, 13, MUTED, false), marginParams(0, 0, 0, 17));
+        content.addView(text("账号 ID · " + packet.optString("accountId", "未知"), 11, MUTED, false), marginParams(0, 0, 0, 12));
+        if (!syncSummary.isEmpty()) content.addView(text(syncSummary, 11, MUTED, false), marginParams(0, 0, 0, 14));
 
         LinearLayout stats = new LinearLayout(this);
         stats.setOrientation(LinearLayout.HORIZONTAL);
@@ -178,14 +185,15 @@ public class MainActivity extends Activity {
             content.addView(text("还没有安排好的日期。", 13, MUTED, false));
         }
 
-        Button clear = actionButton("清除本机数据", false);
+        Button clear = actionButton("清空本地数据并重新绑定", false);
         clear.setTextColor(CORAL);
         clear.setOnClickListener(v -> {
             packet = null;
+            syncSummary = "";
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().clear().apply();
             activeTag = "全部";
             render();
-            Toast.makeText(this, "已清除本机数据", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "已清空本地数据，请重新扫描账号二维码", Toast.LENGTH_SHORT).show();
         });
         content.addView(clear, marginParams(0, 22, 0, 0));
     }
@@ -214,6 +222,8 @@ public class MainActivity extends Activity {
             card.addView(tagRow, marginParams(0, 0, 0, 12));
         }
         card.addView(text("⇢  " + item.optString("transport", "交通方式待补充"), 12, MUTED, false), marginParams(0, 0, 0, 8));
+        String arrangement = item.optString("arrangement", "");
+        if (!arrangement.isEmpty()) card.addView(text("安排  " + arrangement, 12, MUTED, false), marginParams(0, 0, 0, 8));
         String note = item.optString("note", "");
         if (!note.isEmpty()) card.addView(text(note, 12, Color.rgb(133, 148, 143), false));
         return card;
@@ -229,6 +239,8 @@ public class MainActivity extends Activity {
         body.setOrientation(LinearLayout.VERTICAL);
         body.addView(text(item.optString("destination", "未命名安排"), 15, INK, true));
         body.addView(text(item.optString("activity", ""), 12, MUTED, false), marginParams(0, 4, 0, 0));
+        String note = item.optString("note", "");
+        if (!note.isEmpty()) body.addView(text("说明：" + note, 11, Color.rgb(133, 148, 143), false), marginParams(0, 4, 0, 0));
         row.addView(body, new LinearLayout.LayoutParams(0, -2, 1));
         row.addView(text(item.optString("time", ""), 11, MUTED, false));
         card.addView(row);
@@ -391,11 +403,21 @@ public class MainActivity extends Activity {
                 json = new String(Base64.decode(encoded, Base64.DEFAULT), StandardCharsets.UTF_8);
             }
             JSONObject parsed = new JSONObject(json);
+            String incomingAccountId = parsed.optString("accountId", "").trim();
             if (!"travelnote".equals(parsed.optString("format")) || parsed.optInt("version", 0) < 1
-                    || !parsed.has("destinations") || !parsed.has("plans")) {
+                    || incomingAccountId.isEmpty() || !parsed.has("destinations") || !parsed.has("plans")) {
                 throw new JSONException("unsupported packet");
             }
+            String currentAccountId = packet == null ? "" : packet.optString("accountId", "").trim();
+            if (!currentAccountId.isEmpty() && !currentAccountId.equals(incomingAccountId)) {
+                showError("账号 ID 不匹配，已拒绝导入");
+                return;
+            }
+            int[] destinations = countChanges(packet == null ? null : packet.optJSONArray("destinations"), parsed.optJSONArray("destinations"));
+            int[] plans = countChanges(packet == null ? null : packet.optJSONArray("plans"), parsed.optJSONArray("plans"));
             packet = parsed;
+            syncSummary = "地点 新建 " + destinations[0] + " / 更新 " + destinations[1] + " / 删除 " + destinations[2]
+                    + "；日程 新建 " + plans[0] + " / 更新 " + plans[1] + " / 删除 " + plans[2];
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(SAVED_PACKET, parsed.toString()).apply();
             activeTag = "全部";
             render();
@@ -403,6 +425,32 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             showError("这不是有效的 TravelNote 数据包");
         }
+    }
+
+    private int[] countChanges(JSONArray previous, JSONArray incoming) {
+        Map<String, JSONObject> oldById = new HashMap<>();
+        Set<String> incomingIds = new HashSet<>();
+        if (previous != null) {
+            for (int i = 0; i < previous.length(); i++) {
+                JSONObject item = previous.optJSONObject(i);
+                if (item != null) oldById.put(item.optString("id"), item);
+            }
+        }
+        int created = 0;
+        int updated = 0;
+        if (incoming != null) {
+            for (int i = 0; i < incoming.length(); i++) {
+                JSONObject item = incoming.optJSONObject(i);
+                if (item == null) continue;
+                String id = item.optString("id");
+                incomingIds.add(id);
+                if (!oldById.containsKey(id)) created++;
+                else if (!oldById.get(id).toString().equals(item.toString())) updated++;
+            }
+        }
+        int deleted = 0;
+        for (String id : oldById.keySet()) if (!incomingIds.contains(id)) deleted++;
+        return new int[]{created, updated, deleted};
     }
 
     private JSONObject loadPacket() {

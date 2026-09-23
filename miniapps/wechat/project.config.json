@@ -1,0 +1,17 @@
+{
+  "description": "TravelNote 微信小程序",
+  "packOptions": {
+    "ignore": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "minified": true
+  },
+  "compileType": "miniprogram",
+  "appid": "touristappid",
+  "projectname": "travelnote-wechat",
+  "simulatorType": "wechat",
+  "condition": {}
+}
