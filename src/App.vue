@@ -17,6 +17,8 @@ const activeView = ref('destinations')
 const activeFilter = ref('全部')
 const searchTerm = ref('')
 const mobileMenuOpen = ref(false)
+const leftSidebarCollapsed = ref(localStorage.getItem('travelnote-left-sidebar-collapsed') === 'true')
+const rightRailCollapsed = ref(localStorage.getItem('travelnote-right-rail-collapsed') === 'true')
 const toastMessage = ref('')
 const toastTimer = ref(null)
 const showDestinationModal = ref(false)
@@ -189,6 +191,14 @@ async function changePassword() {
 }
 
 function chooseView(view) { activeView.value = view; mobileMenuOpen.value = false }
+function toggleLeftSidebar() {
+  leftSidebarCollapsed.value = !leftSidebarCollapsed.value
+  localStorage.setItem('travelnote-left-sidebar-collapsed', String(leftSidebarCollapsed.value))
+}
+function toggleRightRail() {
+  rightRailCollapsed.value = !rightRailCollapsed.value
+  localStorage.setItem('travelnote-right-rail-collapsed', String(rightRailCollapsed.value))
+}
 function statusClass(status) { return status === '已出发' ? 'dot-green' : status === '已计划' ? 'dot-blue' : 'dot-coral' }
 function statusLabel(status) { return status === '已出发' ? t('departed') : status === '已计划' ? t('planned') : t('want') }
 function tagTone(tag) { return tagClass[tag] || '' }
@@ -322,9 +332,10 @@ onMounted(() => { document.documentElement.lang = locale.value === 'zh' ? 'zh-CN
     </section>
   </div>
 
-  <div v-else class="app-shell" :class="{ 'menu-open': mobileMenuOpen }">
-    <aside class="sidebar" aria-label="主导航">
-      <div class="brand-mark"><span class="brand-dot"></span><span>Travel<span>Note</span></span></div>
+  <div v-else class="app-shell" :class="{ 'menu-open': mobileMenuOpen, 'left-collapsed': leftSidebarCollapsed, 'right-collapsed': rightRailCollapsed }">
+    <aside class="sidebar" :class="{ 'is-collapsed': leftSidebarCollapsed }" aria-label="主导航">
+      <div class="brand-mark"><span class="brand-dot"></span><span class="sidebar-brand-text">Travel<span>Note</span></span></div>
+      <button class="sidebar-collapse-toggle" type="button" :aria-label="leftSidebarCollapsed ? t('expandSidebar') : t('collapseSidebar')" :title="leftSidebarCollapsed ? t('expandSidebar') : t('collapseSidebar')" @click="toggleLeftSidebar"><span>{{ leftSidebarCollapsed ? '›' : '‹' }}</span><b>{{ leftSidebarCollapsed ? '' : t('collapseSidebar') }}</b></button>
       <div class="workspace-switcher"><div class="workspace-avatar">{{ accountAvatar }}</div><div><strong>{{ t('workspace') }}</strong><small>{{ t('personalSpace') }}</small></div><span class="chevron">⌄</span></div>
       <div class="sidebar-label">{{ t('workspaceLabel') }}</div>
       <nav class="main-nav"><button v-for="item in navItems" :key="item.id" class="nav-item" :class="{ active: activeView === item.id }" @click="chooseView(item.id)"><span class="nav-icon">{{ item.icon }}</span><span>{{ item.label }}</span><b v-if="item.count !== undefined">{{ String(item.count).padStart(2, '0') }}</b></button></nav>
@@ -352,7 +363,7 @@ onMounted(() => { document.documentElement.lang = locale.value === 'zh' ? 'zh-CN
       </div>
     </main>
 
-    <aside class="right-rail"><div class="rail-topline"><span>{{ t('next') }}</span><button @click="openPlan()">{{ t('newPlan') }}</button></div><div class="timeline"><div v-for="plan in upcomingPlans" :key="plan.id" class="timeline-item"><div class="time">{{ plan.time }}</div><i class="event-dot"></i><div class="event-card"><strong>{{ plan.destination }}</strong><span>{{ plan.activity }}</span><div v-if="plan.note" class="sidebar-note"><button class="note-toggle" @click="$event.currentTarget.nextElementSibling.hidden = !$event.currentTarget.nextElementSibling.hidden; $event.currentTarget.classList.toggle('expanded')">{{ t('viewNote') }} <span>{{ t('noteExpand') }}</span></button><div class="note-content" hidden v-html="markdownHtml(plan.note)"></div></div></div></div><div v-if="!upcomingPlans.length" class="empty-state">{{ t('noUpcoming') }}</div></div><div class="rail-divider"></div><div class="rail-section-title"><span>{{ t('home') }}</span><button @click="editHome">{{ t('homeEdit') }}</button></div><div class="home-card"><div class="home-pin">⌖</div><div><strong>{{ state.profile.home || '—' }}</strong><small>{{ t('homeHint') }}</small></div></div></aside>
+    <aside class="right-rail" :class="{ 'is-collapsed': rightRailCollapsed }"><button class="rail-collapse-toggle" type="button" :aria-label="rightRailCollapsed ? t('expandRail') : t('collapseRail')" :title="rightRailCollapsed ? t('expandRail') : t('collapseRail')" @click="toggleRightRail"><span>{{ rightRailCollapsed ? '‹' : '›' }}</span><b>{{ rightRailCollapsed ? t('expandRail') : '' }}</b></button><div class="rail-topline"><span>{{ t('next') }}</span><button @click="openPlan()">{{ t('newPlan') }}</button></div><div class="timeline"><div v-for="plan in upcomingPlans" :key="plan.id" class="timeline-item"><div class="time">{{ plan.time }}</div><i class="event-dot"></i><div class="event-card"><strong>{{ plan.destination }}</strong><span>{{ plan.activity }}</span><div v-if="plan.note" class="sidebar-note"><button class="note-toggle" @click="$event.currentTarget.nextElementSibling.hidden = !$event.currentTarget.nextElementSibling.hidden; $event.currentTarget.classList.toggle('expanded')">{{ t('viewNote') }} <span>{{ t('noteExpand') }}</span></button><div class="note-content" hidden v-html="markdownHtml(plan.note)"></div></div></div></div><div v-if="!upcomingPlans.length" class="empty-state">{{ t('noUpcoming') }}</div></div><div class="rail-divider"></div><div class="rail-section-title"><span>{{ t('home') }}</span><button @click="editHome">{{ t('homeEdit') }}</button></div><div class="home-card"><div class="home-pin">⌖</div><div><strong>{{ state.profile.home || '—' }}</strong><small>{{ t('homeHint') }}</small></div></div></aside>
   </div>
 
   <div v-if="showDestinationModal" class="modal-backdrop" @click.self="showDestinationModal = false"><section class="modal" role="dialog"><div class="modal-header"><div><span class="eyebrow">{{ t('travelReason') }}</span><h2>{{ editingDestinationId ? t('editDestinationTitle') : t('addDestinationTitle') }}</h2></div><button class="close-button" @click="showDestinationModal = false">×</button></div><form @submit.prevent="saveDestination"><div class="form-grid two-col"><label>{{ t('destinationName') }}<input v-model="destinationForm.name" required /></label><label>{{ t('region') }}<input v-model="destinationForm.region" required /></label></div><label>{{ t('location') }}<input v-model="destinationForm.location" /></label><div class="form-section-label">{{ t('why') }} <span>{{ t('multi') }}</span></div><div class="tag-picker"><button v-for="tag in state.tagCatalog" :key="tag" type="button" class="tag-choice" :class="{ selected: destinationForm.tags.includes(tag) }" @click="toggleDestinationTag(tag)">{{ tag }}</button></div><label>{{ t('transport') }}<textarea v-model="destinationForm.transport" rows="3"></textarea></label><label>{{ t('arrangement') }}<textarea v-model="destinationForm.arrangement" rows="3"></textarea></label><label>{{ t('note') }} <span class="field-hint">{{ t('markdownHint') }}</span><textarea v-model="destinationForm.note" rows="5"></textarea></label><div class="modal-footer"><button type="button" class="text-button" @click="showDestinationModal = false">{{ t('cancel') }}</button><button class="primary-button">{{ t('save') }}</button></div></form></section></div>
