@@ -7,6 +7,11 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.StyleSpan;
+import android.text.style.TypefaceSpan;
+import android.text.style.UnderlineSpan;
 import android.util.Base64;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -34,6 +39,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     private static final int PICK_JSON = 201;
@@ -225,7 +232,7 @@ public class MainActivity extends Activity {
         String arrangement = item.optString("arrangement", "");
         if (!arrangement.isEmpty()) card.addView(text("安排  " + arrangement, 12, MUTED, false), marginParams(0, 0, 0, 8));
         String note = item.optString("note", "");
-        if (!note.isEmpty()) card.addView(text(note, 12, Color.rgb(133, 148, 143), false));
+        if (!note.isEmpty()) addCollapsedMarkdown(card, note, "查看地点补充说明", 12, Color.rgb(133, 148, 143));
         return card;
     }
 
@@ -240,7 +247,7 @@ public class MainActivity extends Activity {
         body.addView(text(item.optString("destination", "未命名安排"), 15, INK, true));
         body.addView(text(item.optString("activity", ""), 12, MUTED, false), marginParams(0, 4, 0, 0));
         String note = item.optString("note", "");
-        if (!note.isEmpty()) body.addView(text("说明：" + note, 11, Color.rgb(133, 148, 143), false), marginParams(0, 4, 0, 0));
+        if (!note.isEmpty()) addCollapsedMarkdown(body, note, "查看日程补充说明", 11, Color.rgb(133, 148, 143));
         row.addView(body, new LinearLayout.LayoutParams(0, -2, 1));
         row.addView(text(item.optString("time", ""), 11, MUTED, false));
         card.addView(row);
@@ -345,6 +352,56 @@ public class MainActivity extends Activity {
         view.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
         view.setGravity(Gravity.CENTER_VERTICAL);
         return view;
+    }
+
+    private TextView markdownText(String source, float size, int color) {
+        String normalized = source.replace("\r\n", "\n").replace("\r", "\n")
+                .replaceAll("(?m)^\\s*#{1,6}\\s+", "")
+                .replaceAll("(?m)^\\s*(?:[-*+]\\s+|\\d+[.)]\\s+)", "• ");
+        SpannableStringBuilder value = new SpannableStringBuilder(normalized);
+        applyMarkup(value, Pattern.compile("\\*\\*([^*]+)\\*\\*|__([^_]+)__"), 1);
+        applyMarkup(value, Pattern.compile("(?<!\\*)\\*([^*]+)\\*(?!\\*)|(?<!_)_([^_]+)_(?!_)"), 2);
+        applyMarkup(value, Pattern.compile("`([^`]+)`"), 3);
+        applyMarkup(value, Pattern.compile("\\[([^]]+)\\]\\(https?://[^)]+\\)"), 4);
+        TextView view = text("", size, color, false);
+        view.setText(value, TextView.BufferType.SPANNABLE);
+        view.setLineSpacing(0, 1.35f);
+        return view;
+    }
+
+    private void addCollapsedMarkdown(LinearLayout parent, String source, String collapsedLabel, float size, int color) {
+        TextView toggle = text(collapsedLabel, 11, CORAL, true);
+        TextView details = markdownText(source, size, color);
+        details.setVisibility(View.GONE);
+        toggle.setPadding(0, dp(5), 0, dp(2));
+        toggle.setOnClickListener(v -> {
+            boolean expanded = details.getVisibility() != View.VISIBLE;
+            details.setVisibility(expanded ? View.VISIBLE : View.GONE);
+            toggle.setText(expanded ? "收起补充说明" : collapsedLabel);
+        });
+        parent.addView(toggle, marginParams(0, 5, 0, 0));
+        parent.addView(details, marginParams(0, 2, 0, 0));
+    }
+
+    private void applyMarkup(SpannableStringBuilder value, Pattern pattern, int styleType) {
+        Matcher matcher = pattern.matcher(value);
+        while (matcher.find()) {
+            int opening = matcher.group(0).indexOf(matcher.group(1) != null ? matcher.group(1) : matcher.group(2));
+            int contentStart = matcher.start() + opening;
+            int contentEnd = contentStart + (matcher.group(1) != null ? matcher.group(1).length() : matcher.group(2).length());
+            Object style = styleType == 1 ? new StyleSpan(Typeface.BOLD)
+                    : styleType == 2 ? new StyleSpan(Typeface.ITALIC)
+                    : styleType == 3 ? new TypefaceSpan("monospace") : new UnderlineSpan();
+            value.setSpan(style, contentStart, contentEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            int end = matcher.end();
+            if (matcher.group(0).contains("](")) {
+                value.replace(matcher.start(), matcher.end(), matcher.group(1));
+            } else {
+                value.delete(contentEnd, end);
+                value.delete(matcher.start(), contentStart);
+            }
+            matcher = pattern.matcher(value);
+        }
     }
 
     private LinearLayout.LayoutParams marginParams(int left, int top, int right, int bottom) {

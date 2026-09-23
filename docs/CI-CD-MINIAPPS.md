@@ -76,6 +76,7 @@ CI/CD 不处理小程序，只负责 Web Docker 部署包和 Android APK：
 - Web 页面 `dist/`
 - API 服务 `server/`
 - Nginx 配置 `deploy/`
+- Ubuntu 启停脚本 `deploy/start.sh`、`deploy/stop.sh`
 - `Dockerfile`
 - `docker-compose.yml`
 - `.env.example`

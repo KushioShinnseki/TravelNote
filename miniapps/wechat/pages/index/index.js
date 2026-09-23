@@ -1,4 +1,5 @@
 const { decodePacket, applyPacket } = require('../../utils/packet');
+const { markdownNodes } = require('../../utils/markdown');
 
 const STORAGE_KEY = 'travelnote-wechat-state-v1';
 
@@ -10,12 +11,16 @@ function displayState(state) {
   const destinations = (state.destinations || []).map(item => ({
     ...item,
     tagsText: (item.tags || []).join(' · '),
-    regionText: [item.region, item.location].filter(Boolean).join(' · ')
+    regionText: [item.region, item.location].filter(Boolean).join(' · '),
+    noteNodes: markdownNodes(item.note || ''),
+    noteExpanded: false
   }));
   const plans = (state.plans || []).map(item => ({
     ...item,
     dateText: item.date ? item.date.replace(/-/g, '/') : '',
-    destinationText: item.destination || item.otherDestination || '未指定地点'
+    destinationText: item.destination || item.otherDestination || '未指定地点',
+    noteNodes: markdownNodes(item.note || ''),
+    noteExpanded: false
   }));
   return { ...state, destinations, plans, hasData: destinations.length > 0 || plans.length > 0 };
 }
@@ -51,6 +56,14 @@ Page({
 
   switchTab(event) {
     this.setData({ tab: event.currentTarget.dataset.tab });
+  },
+
+  toggleNote(event) {
+    const kind = event.currentTarget.dataset.kind;
+    const id = event.currentTarget.dataset.id;
+    const key = kind === 'destination' ? 'destinations' : 'plans';
+    const values = (this.data[key] || []).map(item => item.id === id ? { ...item, noteExpanded: !item.noteExpanded } : item);
+    this.setData({ [key]: values });
   },
 
   scan() {

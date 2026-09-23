@@ -17,6 +17,16 @@ docker load < docker-images/travelnote-docker-images.tar.gz
 docker compose up -d --no-build
 ```
 
+Ubuntu 服务器也可以使用 ZIP 中的脚本启动和停止服务：
+
+```bash
+chmod +x deploy/start.sh deploy/stop.sh
+./deploy/start.sh
+./deploy/stop.sh
+```
+
+脚本固定使用 Compose 项目名 `travelnote`，只操作该项目的 Web、API、PostgreSQL 容器和网络，不会停止服务器上的其他 Docker Compose 项目，也不会删除数据库 volume。需要使用其他环境文件或项目名时，可设置 `TRAVELNOTE_ENV_FILE` 或 `TRAVELNOTE_COMPOSE_PROJECT`。
+
 首次启动会从本机 `.env` 自动创建一个初始账号。账号密码不写入 README；需要修改时编辑 `.env`，已存在的账号不会被启动脚本覆盖。网页现在支持注册新账号和登录后修改密码，所有旅行数据 API 都需要当前账号的登录会话，不同账号之间不会共享数据。
 
 ## 环境文件和敏感配置
@@ -49,6 +59,16 @@ Copy-Item .env.example .env
 Android 签名使用的 `ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS` 和 `ANDROID_KEY_PASSWORD` 是 Gradle/构建环境变量，不是网页 Docker 的 `.env` 配置。keystore 和这些密码只应保存在本机安全环境或 GitHub Actions Secrets 中，不要提交到 Git。
 
 微信和支付宝小程序不读取 `.env`，它们只在本地开发者工具中填写各自的 AppID；小程序 ZIP 也只允许本地脚本生成。
+
+旅游点和日程的“补充说明”支持 Markdown。网页端会安全地渲染常用语法，原始 Markdown 会随 JSON、二维码和账号数据一起保存；例如：
+
+```markdown
+## 预约信息
+- **集合时间**：09:00
+- [官方预约页面](https://example.com)
+```
+
+支持标题、加粗、斜体、行内代码、列表、链接和换行。Markdown 只用于补充说明，地点名称、交通和日程正文仍按普通文本处理。
 
 ## 账号数据 API
 

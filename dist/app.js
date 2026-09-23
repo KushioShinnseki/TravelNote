@@ -40,6 +40,33 @@ function loadState(storageKey='travelnote-state-v1'){
 }
 function persist(){ if(currentAccountId) localStorage.setItem(`travelnote-state-v1-${currentAccountId}`, JSON.stringify(state)); }
 function escapeHtml(value=''){ return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch])); }
+function markdownInline(value=''){
+  let html=escapeHtml(value);
+  const links=[];
+  html=html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,(_,label,url)=>{const token=`\u0000LINK${links.length}\u0000`;links.push(`<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`);return token;});
+  html=html.replace(/`([^`]+)`/g,'<code>$1</code>');
+  html=html.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/__([^_]+)__/g,'<strong>$1</strong>');
+  html=html.replace(/\*([^*]+)\*/g,'<em>$1</em>').replace(/_([^_]+)_/g,'<em>$1</em>');
+  html=html.replace(/\u0000LINK(\d+)\u0000/g,(_,index)=>links[Number(index)]);
+  return html;
+}
+function markdownHtml(value=''){
+  const lines=String(value).replace(/\r\n?/g,'\n').split('\n'), output=[];
+  let listOpen=false;
+  const closeList=()=>{if(listOpen){output.push('</ul>');listOpen=false;}};
+  lines.forEach(line=>{
+    if(!line.trim()){closeList();return;}
+    const heading=line.match(/^\s{0,3}(#{1,6})\s+(.+)$/);
+    const bullet=line.match(/^\s*[-*+]\s+(.+)$/);
+    const ordered=line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if(heading){closeList();const level=Math.min(heading[1].length,4);output.push(`<h${level}>${markdownInline(heading[2])}</h${level}>`);return;}
+    if(bullet||ordered){if(!listOpen){output.push('<ul>');listOpen=true;}output.push(`<li>${markdownInline((bullet||ordered)[1])}</li>`);return;}
+    closeList();
+    output.push(`<p>${markdownInline(line)}</p>`);
+  });
+  closeList();
+  return `<div class="markdown-body">${output.join('')}</div>`;
+}
 function tagHtml(tag){ return `<span class="tag ${TAG_CLASS[tag]||''}">${escapeHtml(tag)}</span>`; }
 function statusClass(status){ return status === '已出发' ? 'dot-green' : status === '已计划' ? 'dot-blue' : 'dot-coral'; }
 function formatDate(date){ const d = new Date(`${date}T00:00:00`); return `${d.getMonth()+1}月${d.getDate()}日`; }
@@ -141,11 +168,11 @@ function destinationsView(){
   </section>`;
 }
 
-function cardHtml(item){ return `<article class="destination-card"><div class="card-topline"><div class="card-pin ${item.tags.includes('自然风光')?'green':item.tags.includes('美食探索')?'gold':'blue'}">⌖</div><div class="card-actions"><button class="small-icon" data-edit="${item.id}" aria-label="编辑 ${escapeHtml(item.name)}">✎</button><button class="small-icon" data-delete="${item.id}" aria-label="删除 ${escapeHtml(item.name)}">×</button></div></div><h3>${escapeHtml(item.name)}</h3><div class="region">${escapeHtml(item.region)} · ${escapeHtml(item.location)}</div><div class="tag-list">${item.tags.map(tagHtml).join('')}</div><div class="transport-line"><span>⇢</span><span>${escapeHtml(item.transport)}</span></div>${item.arrangement?`<div class="transport-line"><span>▣</span><span>${escapeHtml(item.arrangement)}</span></div>`:''}<div class="card-footer"><span class="status-label"><i class="dot ${statusClass(item.status)}"></i>${escapeHtml(item.status)}</span><span>${escapeHtml(item.note||'')}</span></div></article>`; }
+function cardHtml(item){ return `<article class="destination-card"><div class="card-topline"><div class="card-pin ${item.tags.includes('自然风光')?'green':item.tags.includes('美食探索')?'gold':'blue'}">⌖</div><div class="card-actions"><button class="small-icon" data-edit="${item.id}" aria-label="编辑 ${escapeHtml(item.name)}">✎</button><button class="small-icon" data-delete="${item.id}" aria-label="删除 ${escapeHtml(item.name)}">×</button></div></div><h3>${escapeHtml(item.name)}</h3><div class="region">${escapeHtml(item.region)} · ${escapeHtml(item.location)}</div><div class="tag-list">${item.tags.map(tagHtml).join('')}</div><div class="transport-line"><span>⇢</span><span>${escapeHtml(item.transport)}</span></div>${item.arrangement?`<div class="transport-line"><span>▣</span><span>${escapeHtml(item.arrangement)}</span></div>`:''}${item.note?`<div class="note-block"><span class="note-label">说明</span>${markdownHtml(item.note)}</div>`:''}<div class="card-footer"><span class="status-label"><i class="dot ${statusClass(item.status)}"></i>${escapeHtml(item.status)}</span></div></article>`; }
 
 function plansView(){
   const sorted=[...state.plans].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
-  return `<section class="view-section active"><div class="plans-header"><div><span class="eyebrow">Your itinerary</span><h2>日程安排</h2></div><button class="primary-button" id="add-plan"><span class="plus">+</span>新增安排</button></div><div class="plan-list">${sorted.length ? sorted.map(plan=>`<article class="plan-row"><div class="plan-date"><strong>${formatDate(plan.date)}</strong><br>周${formatWeek(plan.date)}</div><div><h3>${escapeHtml(plan.destination)}</h3><p>${escapeHtml(plan.activity)}</p>${plan.note?`<small>${escapeHtml(plan.note)}</small>`:''}</div><time>${escapeHtml(plan.time)}</time></article>`).join('') : `<div class="empty-state"><strong>还没有安排</strong><span>给某个日期留下一点期待。</span></div>`}</div></section>`;
+  return `<section class="view-section active"><div class="plans-header"><div><span class="eyebrow">Your itinerary</span><h2>日程安排</h2></div><button class="primary-button" id="add-plan"><span class="plus">+</span>新增安排</button></div><div class="plan-list">${sorted.length ? sorted.map(plan=>`<article class="plan-row"><div class="plan-date"><strong>${formatDate(plan.date)}</strong><br>周${formatWeek(plan.date)}</div><div><h3>${escapeHtml(plan.destination)}</h3><p>${escapeHtml(plan.activity)}</p>${plan.note?markdownHtml(plan.note):''}</div><time>${escapeHtml(plan.time)}</time></article>`).join('') : `<div class="empty-state"><strong>还没有安排</strong><span>给某个日期留下一点期待。</span></div>`}</div></section>`;
 }
 
 function exchangeView(){

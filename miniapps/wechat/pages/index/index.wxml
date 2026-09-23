@@ -32,7 +32,7 @@
         <text class="tags" wx:if="{{item.tagsText}}">{{item.tagsText}}</text>
         <view class="info" wx:if="{{item.transport}}"><text class="info-label">交通</text><text>{{item.transport}}</text></view>
         <view class="info" wx:if="{{item.arrangement}}"><text class="info-label">安排</text><text>{{item.arrangement}}</text></view>
-        <view class="info note" wx:if="{{item.note}}"><text class="info-label">说明</text><text>{{item.note}}</text></view>
+        <view class="info note" wx:if="{{item.note}}"><text class="info-label">说明</text><view class="note-content"><view class="markdown-toggle" data-kind="destination" data-id="{{item.id}}" bindtap="toggleNote">{{item.noteExpanded ? '收起补充说明' : '查看地点补充说明'}}</view><rich-text class="markdown-note" wx:if="{{item.noteExpanded}}" nodes="{{item.noteNodes}}"></rich-text></view></view>
       </view>
     </block>
   </view>
@@ -43,7 +43,7 @@
     <block wx:for="{{plans}}" wx:key="id">
       <view class="plan-card">
         <view class="plan-date"><text>{{item.dateText}}</text><text>{{item.time}}</text></view>
-        <view class="plan-content"><text class="destination-name">{{item.destinationText}}</text><text>{{item.activity}}</text><text class="note" wx:if="{{item.note}}">说明：{{item.note}}</text></view>
+        <view class="plan-content"><text class="destination-name">{{item.destinationText}}</text><text>{{item.activity}}</text><view class="note" wx:if="{{item.note}}"><view class="markdown-toggle" data-kind="plan" data-id="{{item.id}}" bindtap="toggleNote">{{item.noteExpanded ? '收起补充说明' : '查看日程补充说明'}}</view><rich-text class="markdown-note" wx:if="{{item.noteExpanded}}" nodes="{{item.noteNodes}}"></rich-text></view></view>
       </view>
     </block>
   </view>
