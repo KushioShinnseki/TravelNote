@@ -29,7 +29,7 @@
         <text class="region">{{item.regionText}}</text><text class="tags" a:if="{{item.tagsText}}">{{item.tagsText}}</text>
         <view class="info" a:if="{{item.transport}}"><text class="info-label">交通</text><text>{{item.transport}}</text></view>
         <view class="info" a:if="{{item.arrangement}}"><text class="info-label">安排</text><text>{{item.arrangement}}</text></view>
-        <view class="info note" a:if="{{item.note}}"><text class="info-label">说明</text><text>{{item.note}}</text></view>
+        <view class="info note" a:if="{{item.note}}"><text class="info-label">说明</text><view class="note-content"><view class="markdown-toggle" data-kind="destination" data-id="{{item.id}}" onTap="toggleNote">{{item.noteExpanded ? '收起补充说明' : '查看地点补充说明'}}</view><rich-text class="markdown-note" a:if="{{item.noteExpanded}}" nodes="{{item.noteNodes}}"></rich-text></view></view>
       </view>
     </block>
   </view>
@@ -38,7 +38,7 @@
     <view class="section-heading"><text>日程安排</text><text class="count">{{plans.length}}</text></view>
     <view class="empty-card" a:if="{{plans.length == 0}}">还没有日程安排。</view>
     <block a:for="{{plans}}" a:key="id">
-      <view class="plan-card"><view class="plan-date"><text>{{item.dateText}}</text><text>{{item.time}}</text></view><view class="plan-content"><text class="destination-name">{{item.destinationText}}</text><text>{{item.activity}}</text><text class="note" a:if="{{item.note}}">说明：{{item.note}}</text></view></view>
+      <view class="plan-card"><view class="plan-date"><text>{{item.dateText}}</text><text>{{item.time}}</text></view><view class="plan-content"><text class="destination-name">{{item.destinationText}}</text><text>{{item.activity}}</text><view class="note" a:if="{{item.note}}"><view class="markdown-toggle" data-kind="plan" data-id="{{item.id}}" onTap="toggleNote">{{item.noteExpanded ? '收起补充说明' : '查看日程补充说明'}}</view><rich-text class="markdown-note" a:if="{{item.noteExpanded}}" nodes="{{item.noteNodes}}"></rich-text></view></view></view>
     </block>
   </view>
 

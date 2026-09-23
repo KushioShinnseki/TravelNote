@@ -98,7 +98,7 @@
           <div class="tag-picker" id="form-tags"></div>
           <label>从出发地怎么去<textarea name="transport" rows="3" placeholder="例如：虹桥站 → 杭州东站，约 45 分钟；落地后地铁 2 号线。"></textarea></label>
           <label>旅行安排<textarea name="arrangement" rows="3" placeholder="例如：第一天逛古城，第二天去周边景点"></textarea></label>
-          <label>补充说明<textarea name="note" rows="2" placeholder="想看的展览、想吃的店，或任何随手记下的念头"></textarea></label>
+          <label>补充说明 <span class="field-hint">支持 Markdown</span><textarea name="note" rows="5" placeholder="支持 **加粗**、*斜体*、- 列表、[链接](https://example.com) 和换行"></textarea></label>
           <div class="modal-footer"><button type="button" class="text-button" data-close-modal>取消</button><button type="submit" class="primary-button">保存地点</button></div>
         </form>
       </section>
@@ -112,7 +112,7 @@
           <label>选择旅游点<select name="destinationId"><option value="">不选择已有地点</option></select></label>
           <label>其他地点<input name="otherDestination" placeholder="如果列表中没有，请填写其他地点" /></label>
           <label>这一天做什么<textarea name="activity" rows="3" required placeholder="安排、路线或想完成的事情"></textarea></label>
-          <label>补充说明<textarea name="note" rows="2" placeholder="预约信息、同行人或当天的其他说明"></textarea></label>
+          <label>补充说明 <span class="field-hint">支持 Markdown</span><textarea name="note" rows="5" placeholder="例如：**预约信息**\n- 同行人：小林\n- 集合时间：09:00"></textarea></label>
           <div class="modal-footer"><button type="button" class="text-button" data-close-modal>取消</button><button type="submit" class="primary-button">加入日程</button></div>
         </form>
       </section>
