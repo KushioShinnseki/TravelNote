@@ -198,6 +198,7 @@ async function ensureSchema() {
     CREATE TABLE IF NOT EXISTS profiles (
       account_id BIGINT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
       home VARCHAR(255) NOT NULL DEFAULT '',
+      enabled_system_tags TEXT[] NOT NULL DEFAULT ARRAY['自然风光', '文化历史', '美食探索', '建筑空间', '慢节奏', '周末短途', '艺术展览', '朋友同行']::TEXT[],
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
@@ -258,6 +259,7 @@ async function ensureSchema() {
 
   await pool.query("ALTER TABLE destinations ADD COLUMN IF NOT EXISTS arrangement TEXT NOT NULL DEFAULT ''");
   await pool.query("ALTER TABLE destinations ADD COLUMN IF NOT EXISTS visit_count INTEGER NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS enabled_system_tags TEXT[] NOT NULL DEFAULT ARRAY['自然风光', '文化历史', '美食探索', '建筑空间', '慢节奏', '周末短途', '艺术展览', '朋友同行']::TEXT[]");
   await pool.query('ALTER TABLE plans ALTER COLUMN plan_time DROP NOT NULL');
   await pool.query("ALTER TABLE plans ADD COLUMN IF NOT EXISTS destination_id BIGINT REFERENCES destinations(id) ON DELETE SET NULL");
   await pool.query("ALTER TABLE plans ADD COLUMN IF NOT EXISTS other_destination VARCHAR(255) NOT NULL DEFAULT ''");
@@ -290,7 +292,7 @@ async function readWorkspace(id) {
   const client = await pool.connect();
   try {
     await ensureAccountDefaults(client, id);
-    const profileResult = await client.query('SELECT home FROM profiles WHERE account_id = $1', [id]);
+    const profileResult = await client.query('SELECT home, enabled_system_tags FROM profiles WHERE account_id = $1', [id]);
     const tagResult = await client.query('SELECT name FROM tags WHERE account_id = $1 ORDER BY created_at, id', [id]);
     const destinationResult = await client.query(`
       SELECT d.public_id AS id, d.name, d.region, d.location, d.transport, d.arrangement, d.note, d.visit_count AS "visitCount", d.status,
@@ -316,6 +318,7 @@ async function readWorkspace(id) {
       format: 'travelnote',
       version: 2,
       profile: { home: profileResult.rows[0]?.home || defaultHome },
+      enabledSystemTags: Array.isArray(profileResult.rows[0]?.enabled_system_tags) ? profileResult.rows[0].enabled_system_tags : [...defaultTags],
       tagCatalog: tagResult.rows.map(row => row.name),
       destinations: destinationResult.rows,
       plans: planResult.rows
@@ -356,10 +359,12 @@ async function replaceWorkspace(id, workspace) {
     await client.query('DELETE FROM tags WHERE account_id = $1', [id]);
 
     const profileHome = text(workspace.profile?.home, defaultHome).slice(0, 255) || defaultHome;
+    const enabledSystemTags = (Array.isArray(workspace.enabledSystemTags) ? workspace.enabledSystemTags : defaultTags)
+      .map(value => text(value)).filter(value => defaultTags.includes(value));
     await client.query(
-      `INSERT INTO profiles (account_id, home, updated_at) VALUES ($1, $2, NOW())
-       ON CONFLICT (account_id) DO UPDATE SET home = EXCLUDED.home, updated_at = NOW()`,
-      [id, profileHome]
+      `INSERT INTO profiles (account_id, home, enabled_system_tags, updated_at) VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (account_id) DO UPDATE SET home = EXCLUDED.home, enabled_system_tags = EXCLUDED.enabled_system_tags, updated_at = NOW()`,
+      [id, profileHome, enabledSystemTags]
     );
 
     const destinationItems = workspace.destinations.map(item => ({
