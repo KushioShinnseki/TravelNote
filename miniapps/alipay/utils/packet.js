@@ -50,10 +50,11 @@ function decodePacket(raw) {
     profile: { home: text(packet.profile && packet.profile.home) }, tagCatalog: unique(packet.tagCatalog),
     destinations: packet.destinations.map((item, index) => ({
       id: text(item.id, `d-${index}`), name: text(item.name), region: text(item.region), location: text(item.location),
-      tags: unique(item.tags), transport: text(item.transport), arrangement: text(item.arrangement), note: text(item.note), status: text(item.status, '想去')
+      tags: unique(item.tags), transport: text(item.transport), arrangement: text(item.arrangement), note: text(item.note),
+      visitCount: Math.max(0, Math.floor(Number(item.visitCount) || 0)), status: text(item.status, '想去')
     })),
     plans: packet.plans.map((item, index) => ({
-      id: text(item.id, `p-${index}`), date: text(item.date), time: text(item.time, '09:00'), destinationId: text(item.destinationId),
+      id: text(item.id, `p-${index}`), date: text(item.date), time: text(item.time), destinationId: text(item.destinationId),
       destination: text(item.destination, text(item.otherDestination, '未指定地点')), otherDestination: text(item.otherDestination), activity: text(item.activity), note: text(item.note)
     }))
   };

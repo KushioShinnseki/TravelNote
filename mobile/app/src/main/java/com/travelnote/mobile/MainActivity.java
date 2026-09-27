@@ -147,7 +147,12 @@ public class MainActivity extends Activity {
         top.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
         Button importButton = actionButton("重新导入", false);
         importButton.setOnClickListener(v -> chooseJson());
-        top.addView(importButton, new LinearLayout.LayoutParams(dp(100), dp(40)));
+        top.addView(importButton, new LinearLayout.LayoutParams(dp(92), dp(40)));
+        Button scanButton = actionButton("重新扫码", true);
+        scanButton.setOnClickListener(v -> scanQr());
+        LinearLayout.LayoutParams scanParams = new LinearLayout.LayoutParams(dp(92), dp(40));
+        scanParams.setMargins(dp(7), 0, 0, 0);
+        top.addView(scanButton, scanParams);
         content.addView(top, marginParams(0, 0, 0, 8));
 
         String home = profile == null ? "" : profile.optString("home", "");
@@ -245,6 +250,8 @@ public class MainActivity extends Activity {
         card.addView(text("⇢  " + item.optString("transport", "交通方式待补充"), 12, MUTED, false), marginParams(0, 0, 0, 8));
         String arrangement = item.optString("arrangement", "");
         if (!arrangement.isEmpty()) card.addView(text("安排  " + arrangement, 12, MUTED, false), marginParams(0, 0, 0, 8));
+        int visitCount = Math.max(0, item.optInt("visitCount", 0));
+        card.addView(text("去过 " + visitCount + " 次", 11, MUTED, false), marginParams(0, 0, 0, 5));
         String note = item.optString("note", "");
         if (!note.isEmpty()) addCollapsedMarkdown(card, note, "查看地点补充说明", 12, Color.rgb(133, 148, 143));
         return card;
@@ -263,7 +270,8 @@ public class MainActivity extends Activity {
         String note = item.optString("note", "");
         if (!note.isEmpty()) addCollapsedMarkdown(body, note, "查看日程补充说明", 11, Color.rgb(133, 148, 143));
         row.addView(body, new LinearLayout.LayoutParams(0, -2, 1));
-        row.addView(text(item.optString("time", ""), 11, MUTED, false));
+        String time = item.optString("time", "");
+        row.addView(text(time.isEmpty() ? "全天" : time, 11, MUTED, false));
         card.addView(row);
         return card;
     }

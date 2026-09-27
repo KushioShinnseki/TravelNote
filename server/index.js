@@ -223,6 +223,7 @@ async function ensureSchema() {
       transport TEXT NOT NULL DEFAULT '',
       arrangement TEXT NOT NULL DEFAULT '',
       note TEXT NOT NULL DEFAULT '',
+      visit_count INTEGER NOT NULL DEFAULT 0,
       status VARCHAR(32) NOT NULL DEFAULT '想去',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -244,7 +245,7 @@ async function ensureSchema() {
       account_id BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
       public_id VARCHAR(80) NOT NULL,
       plan_date DATE NOT NULL,
-      plan_time TIME NOT NULL DEFAULT '09:00',
+      plan_time TIME DEFAULT NULL,
       destination_id BIGINT REFERENCES destinations(id) ON DELETE SET NULL,
       destination VARCHAR(255) NOT NULL,
       other_destination VARCHAR(255) NOT NULL DEFAULT '',
@@ -256,6 +257,8 @@ async function ensureSchema() {
   `);
 
   await pool.query("ALTER TABLE destinations ADD COLUMN IF NOT EXISTS arrangement TEXT NOT NULL DEFAULT ''");
+  await pool.query("ALTER TABLE destinations ADD COLUMN IF NOT EXISTS visit_count INTEGER NOT NULL DEFAULT 0");
+  await pool.query('ALTER TABLE plans ALTER COLUMN plan_time DROP NOT NULL');
   await pool.query("ALTER TABLE plans ADD COLUMN IF NOT EXISTS destination_id BIGINT REFERENCES destinations(id) ON DELETE SET NULL");
   await pool.query("ALTER TABLE plans ADD COLUMN IF NOT EXISTS other_destination VARCHAR(255) NOT NULL DEFAULT ''");
   await pool.query("ALTER TABLE plans ADD COLUMN IF NOT EXISTS note TEXT NOT NULL DEFAULT ''");
@@ -290,7 +293,7 @@ async function readWorkspace(id) {
     const profileResult = await client.query('SELECT home FROM profiles WHERE account_id = $1', [id]);
     const tagResult = await client.query('SELECT name FROM tags WHERE account_id = $1 ORDER BY created_at, id', [id]);
     const destinationResult = await client.query(`
-      SELECT d.public_id AS id, d.name, d.region, d.location, d.transport, d.arrangement, d.note, d.status,
+      SELECT d.public_id AS id, d.name, d.region, d.location, d.transport, d.arrangement, d.note, d.visit_count AS "visitCount", d.status,
         COALESCE(array_agg(t.name ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
       FROM destinations d
       LEFT JOIN destination_tags dt ON dt.destination_id = d.id
@@ -301,7 +304,7 @@ async function readWorkspace(id) {
     `, [id]);
     const planResult = await client.query(`
       SELECT p.public_id AS id, TO_CHAR(p.plan_date, 'YYYY-MM-DD') AS date,
-        TO_CHAR(p.plan_time, 'HH24:MI') AS time, d.public_id AS "destinationId",
+        COALESCE(TO_CHAR(p.plan_time, 'HH24:MI'), '') AS time, d.public_id AS "destinationId",
         p.destination, p.other_destination AS "otherDestination", p.activity, p.note
       FROM plans p
       LEFT JOIN destinations d ON d.id = p.destination_id
@@ -368,12 +371,13 @@ async function replaceWorkspace(id, workspace) {
       transport: text(item.transport),
       arrangement: text(item.arrangement),
       note: text(item.note),
+      visitCount: Math.max(0, Math.floor(Number(item.visitCount) || 0)),
       status: text(item.status, '想去').slice(0, 32) || '想去'
     }));
     const planItems = workspace.plans.map(item => ({
       id: publicId(item.id, 'p'),
       date: text(item.date),
-      time: text(item.time, '09:00') || '09:00',
+      time: text(item.time),
       destinationId: text(item.destinationId),
       destination: text(item.destination).slice(0, 255),
       otherDestination: text(item.otherDestination).slice(0, 255),
@@ -401,9 +405,9 @@ async function replaceWorkspace(id, workspace) {
       while (destinationIds.has(itemId)) itemId = publicId('', 'd');
       destinationIds.add(itemId);
       const result = await client.query(
-        `INSERT INTO destinations (account_id, public_id, name, region, location, transport, arrangement, note, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-        [id, itemId, item.name, item.region, item.location, item.transport, item.arrangement, item.note, item.status]
+        `INSERT INTO destinations (account_id, public_id, name, region, location, transport, arrangement, note, visit_count, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+        [id, itemId, item.name, item.region, item.location, item.transport, item.arrangement, item.note, item.visitCount, item.status]
       );
       destinationDatabaseIds.set(itemId, result.rows[0].id);
       for (const tag of item.tags) {
@@ -424,7 +428,7 @@ async function replaceWorkspace(id, workspace) {
           id,
           itemId,
           item.date,
-          item.time,
+          text(item.time) || null,
           destinationDatabaseIds.get(item.destinationId) || null,
           item.destination || item.otherDestination || '未指定地点',
           item.otherDestination,
