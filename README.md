@@ -8,7 +8,7 @@ TravelNote 是一个离线优先的旅行记录工作台：网页端记录想去
 docker compose up --build
 ```
 
-然后打开 <http://localhost:8080>，使用本地账号登录。数据库会保存到 Docker volume `travelnote-db`，账号密码只以 bcrypt 哈希形式保存；出发地、标签、旅行地点、交通、旅行安排、地点补充说明、日程和日程补充说明都会按账号保存到 PostgreSQL。
+然后打开 <http://localhost:8080>，使用本地账号登录。数据库会保存到 Docker volume `travelnote-db`，账号密码只以 bcrypt 哈希形式保存；出发地、标签、旅行地点、交通、旅行安排、地点补充说明、去过次数、日程和日程补充说明都会按账号保存到 PostgreSQL。日程时间可以留空，表示全天安排。
 
 `travelnote-web.zip` 是完整 Web Docker 源码部署包，包含 `dist` 页面、`server` API、Nginx 配置、Docker Compose 配置、`.env.example` 和 Ubuntu 启停脚本，不包含预构建 Docker 镜像。解压后填写 `.env`，启动脚本会在服务器本地构建镜像：
 
@@ -54,7 +54,7 @@ npm run package:web
 
 前端源码位于 `src/`，Vite 入口为根目录 `index.html`，生成的 `dist/` 会被 Docker 中的 Nginx 直接提供。CI/CD 会先执行 `npm ci` 和 `npm run build`，再构建 Docker；网页 ZIP 同时包含生成后的 `dist/`、Vue 源码、`package.json`、锁文件和 Vite 配置，方便后续继续开发或在服务器本地重建。
 
-首次启动会从本机 `.env` 自动创建一个初始账号。账号密码不写入 README；需要修改时编辑 `.env`，已存在的账号不会被启动脚本覆盖。网页现在支持注册新账号和登录后修改密码，所有旅行数据 API 都需要当前账号的登录会话，不同账号之间不会共享数据。
+首次启动会从本机 `.env` 自动创建一个初始账号。账号密码不写入 README；需要修改时编辑 `.env`，已存在的账号不会被启动脚本覆盖。网页现在支持注册新账号和登录后修改密码，所有旅行数据 API 都需要当前账号的登录会话，不同账号之间不会共享数据。旅游点可以在编辑窗口直接修改去过次数，也可以在地点卡片点击“+1”；创建日程时可以按地点名称、标签以及“去过/没去过”筛选。
 
 ## 环境文件和敏感配置
 

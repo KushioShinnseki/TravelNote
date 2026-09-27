@@ -68,12 +68,13 @@ function decodePacket(raw) {
       transport: text(item.transport),
       arrangement: text(item.arrangement),
       note: text(item.note),
+      visitCount: Math.max(0, Math.floor(Number(item.visitCount) || 0)),
       status: text(item.status, '想去')
     })),
     plans: packet.plans.map((item, index) => ({
       id: text(item.id, `p-${index}`),
       date: text(item.date),
-      time: text(item.time, '09:00'),
+      time: text(item.time),
       destinationId: text(item.destinationId),
       destination: text(item.destination, text(item.otherDestination, '未指定地点')),
       otherDestination: text(item.otherDestination),
