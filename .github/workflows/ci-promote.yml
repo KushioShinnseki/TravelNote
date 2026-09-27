@@ -73,9 +73,11 @@ jobs:
           fi
           git reset --hard "origin/$TARGET_BRANCH"
           # The source branch is the authoritative snapshot for this promotion.
-          # Prefer it when the target contains an older CI-generated edit to the
-          # same file, while keeping the result as one CI commit on main.
-          git merge --squash -X theirs "origin/$SOURCE_BRANCH"
+          # Replace the index and worktree directly instead of using a merge:
+          # Vite's hashed dist filenames can otherwise cause rename/rename
+          # conflicts even though the source branch should win as a whole.
+          git read-tree --reset -u "origin/$SOURCE_BRANCH"
+          git add --all
           if git diff --cached --quiet; then
             echo "No changes to promote"
             exit 1
