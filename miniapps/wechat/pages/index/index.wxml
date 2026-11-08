@@ -43,7 +43,7 @@
     <block wx:for="{{plans}}" wx:key="id">
       <view class="plan-card">
         <view class="plan-date"><text>{{item.dateText}}</text><text>{{item.time}}</text></view>
-        <view class="plan-content"><text class="destination-name">{{item.destinationText}}</text><text>{{item.activity}}</text><view class="note" wx:if="{{item.note}}"><view class="markdown-toggle" data-kind="plan" data-id="{{item.id}}" bindtap="toggleNote">{{item.noteExpanded ? '收起补充说明' : '查看日程补充说明'}}</view><rich-text class="markdown-note" wx:if="{{item.noteExpanded}}" nodes="{{item.noteNodes}}"></rich-text></view></view>
+        <view class="plan-content"><text wx:if="{{item.tripName}}">{{item.tripName}}</text><text class="destination-name">{{item.destinationText}}</text><text>{{item.activity}}</text><view class="note" wx:if="{{item.note}}"><view class="markdown-toggle" data-kind="plan" data-id="{{item.id}}" bindtap="toggleNote">{{item.noteExpanded ? '收起补充说明' : '查看日程补充说明'}}</view><rich-text class="markdown-note" wx:if="{{item.noteExpanded}}" nodes="{{item.noteNodes}}"></rich-text></view></view>
       </view>
     </block>
   </view>

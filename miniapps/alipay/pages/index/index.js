@@ -19,6 +19,7 @@ function displayState(state) {
     ...item,
     dateText: item.date ? item.date.replace(/-/g, '/') : '',
     destinationText: item.destination || item.otherDestination || '未指定地点',
+    tripName: ((state.trips || []).find(trip => trip.id === item.tripId) || {}).name || '',
     noteNodes: markdownNodes(item.note || ''),
     noteExpanded: false
   }));
