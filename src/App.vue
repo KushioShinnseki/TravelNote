@@ -2,12 +2,14 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import QRCode from 'qrcode'
+import { normalizePlan, planDestinationIds } from '../server/itinerary.mjs'
+import { selectExport, mergeImport } from '../server/transfer.mjs'
 
 const { t, locale } = useI18n()
 
 const systemTags = ['自然风光', '文化历史', '美食探索', '建筑空间', '慢节奏', '周末短途', '艺术展览', '朋友同行']
 const tagClass = { 自然风光: 'green', 文化历史: 'blue', 建筑空间: 'blue', 慢节奏: 'green', 艺术展览: 'blue', 朋友同行: 'green' }
-const emptyState = () => ({ profile: { home: '' }, enabledSystemTags: [...systemTags], destinations: [], plans: [], tagCatalog: [] })
+const emptyState = () => ({ profile: { home: '' }, enabledSystemTags: [...systemTags], destinations: [], trips: [], plans: [], tagCatalog: [] })
 const state = reactive(emptyState())
 const account = ref(null)
 const authenticated = ref(false)
@@ -31,12 +33,17 @@ const editingPlanId = ref(null)
 const qrText = ref('')
 const qrCanvas = ref(null)
 const qrLargeCanvas = ref(null)
+const tripFilter = ref('all')
+const newTripName = ref('')
+const exportScopeKey = ref('all')
+const exportPacket = computed(() => selectExport(packet(), exportScopeKey.value === 'all' ? { type: 'all' } : { type: exportScopeKey.value.startsWith('trip:') ? 'trip' : 'plan', id: exportScopeKey.value.slice(5) }))
+const displayedPlans = computed(() => sortedPlans.value.filter(plan => tripFilter.value === 'all' || (tripFilter.value === 'ungrouped' ? !plan.tripId : plan.tripId === tripFilter.value)))
 
 const loginForm = reactive({ username: '', password: '' })
 const registerForm = reactive({ username: '', password: '', confirmPassword: '' })
 const passwordForm = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' })
 const destinationForm = reactive({ name: '', region: '', location: '', transport: '', arrangement: '', note: '', tags: [], visitCount: 0 })
-const planForm = reactive({ date: '', time: '', destinationId: '', otherDestination: '', activity: '', note: '' })
+const planForm = reactive({ date: '', time: '', tripId: '', destinationIds: [], otherDestination: '', activity: '', note: '' })
 const planDestinationFilter = reactive({ query: '', tag: '', visit: 'all' })
 
 const navItems = computed(() => [
@@ -83,7 +90,8 @@ function normalizeState(saved = {}) {
     profile: { home: '', ...(saved.profile || {}) },
     enabledSystemTags: Array.isArray(saved.enabledSystemTags) ? saved.enabledSystemTags.filter(tag => systemTags.includes(tag)) : [...systemTags],
     destinations,
-    plans: (Array.isArray(saved.plans) ? saved.plans : []).map(item => ({ ...item, destinationId: item.destinationId || '', otherDestination: item.otherDestination || '', activity: item.activity || '', note: item.note || '' })),
+    trips: (Array.isArray(saved.trips) ? saved.trips : []).map(item => ({ id: String(item.id), name: String(item.name || '') })),
+    plans: (Array.isArray(saved.plans) ? saved.plans : []).map(item => normalizePlan(item, destinations)),
     tagCatalog: [...new Set([...(Array.isArray(saved.tagCatalog) ? saved.tagCatalog : []), ...systemTags, ...destinations.flatMap(item => item.tags || [])])]
   }
 }
@@ -93,12 +101,13 @@ function replaceState(next) {
   state.profile = normalized.profile
   state.enabledSystemTags = normalized.enabledSystemTags
   state.destinations = normalized.destinations
+  state.trips = normalized.trips
   state.plans = normalized.plans
   state.tagCatalog = normalized.tagCatalog
 }
 
 function packet() {
-  return { format: 'travelnote', version: 3, accountId: String(account.value?.id || ''), exportedAt: new Date().toISOString(), profile: state.profile, enabledSystemTags: state.enabledSystemTags, tagCatalog: state.tagCatalog, destinations: state.destinations, plans: state.plans }
+  return { format: 'travelnote', version: 3, accountId: String(account.value?.id || ''), exportedAt: new Date().toISOString(), profile: state.profile, enabledSystemTags: state.enabledSystemTags, tagCatalog: state.tagCatalog, destinations: state.destinations, trips: state.trips, plans: state.plans }
 }
 
 function encodePacket(value) {
@@ -110,7 +119,7 @@ function encodePacket(value) {
 
 function storageKey() { return `travelnote-state-v1-${account.value?.id || ''}` }
 function persistLocal() { if (account.value) localStorage.setItem(storageKey(), JSON.stringify(state)) }
-function cloneState() { return JSON.parse(JSON.stringify({ profile: state.profile, enabledSystemTags: state.enabledSystemTags, destinations: state.destinations, plans: state.plans, tagCatalog: state.tagCatalog })) }
+function cloneState() { return JSON.parse(JSON.stringify({ profile: state.profile, enabledSystemTags: state.enabledSystemTags, destinations: state.destinations, trips: state.trips, plans: state.plans, tagCatalog: state.tagCatalog })) }
 function showToast(message) {
   toastMessage.value = message
   clearTimeout(toastTimer.value)
@@ -155,7 +164,7 @@ async function syncWorkspace() {
 async function commitWorkspace(mutator, message) {
   const previous = cloneState()
   mutator()
-  try { await syncWorkspace(); showToast(message) } catch (error) { replaceState(previous); showToast(error.message) }
+  try { await syncWorkspace(); showToast(message); return true } catch (error) { replaceState(previous); showToast(error.message); return false }
 }
 
 async function bootstrap() {
@@ -194,6 +203,8 @@ async function logout() {
   try { await apiRequest('/api/auth/logout', { method: 'POST', body: '{}' }) } catch { /* local reset still logs out */ }
   authenticated.value = false
   account.value = null
+  exportScopeKey.value = 'all'
+  tripFilter.value = 'all'
   replaceState(emptyState())
 }
 
@@ -256,13 +267,20 @@ async function saveDestination() {
     const index = state.destinations.findIndex(x => x.id === id)
     if (index >= 0) state.destinations[index] = value
     else state.destinations.push(value)
-    if (editingDestinationId.value) state.plans = state.plans.map(plan => plan.destinationId === id ? { ...plan, destination: destinationLabel(value) } : plan)
+    state.plans = state.plans.map(plan => normalizePlan(plan, state.destinations))
   }, t(editingDestinationId.value ? 'destinationUpdated' : 'destinationAdded'))
   showDestinationModal.value = false
 }
 async function deleteDestination(item) {
   if (!confirm(t('confirmDeleteDestination', { name: item.name }))) return
-  await commitWorkspace(() => { state.destinations = state.destinations.filter(x => x.id !== item.id) }, t('destinationDeleted'))
+  await commitWorkspace(() => {
+    state.plans = state.plans.map(plan => {
+      const ids = planDestinationIds(plan)
+      return ids.includes(item.id) ? { ...plan, destinationIds: ids.filter(id => id !== item.id), otherDestination: [plan.otherDestination, destinationLabel(item)].filter(Boolean).join(' → ') } : plan
+    })
+    state.destinations = state.destinations.filter(x => x.id !== item.id)
+    state.plans = state.plans.map(plan => normalizePlan(plan, state.destinations))
+  }, t('destinationDeleted'))
 }
 function toggleDestinationTag(tag) { destinationForm.tags = destinationForm.tags.includes(tag) ? destinationForm.tags.filter(x => x !== tag) : [...destinationForm.tags, tag] }
 async function incrementVisitCount(item) {
@@ -275,22 +293,55 @@ async function incrementVisitCount(item) {
 function openPlan(id = null) {
   editingPlanId.value = id
   const item = state.plans.find(x => x.id === id)
-  Object.assign(planForm, { date: item?.date || new Date().toISOString().slice(0, 10), time: item?.time || '', destinationId: item?.destinationId || '', otherDestination: item?.otherDestination || (!item?.destinationId ? item?.destination || '' : ''), activity: item?.activity || '', note: item?.note || '' })
+  const today = new Date()
+  const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  Object.assign(planForm, { date: item?.date || localDate, time: item?.time || '', tripId: item ? item.tripId || '' : (state.trips.some(trip => trip.id === tripFilter.value) ? tripFilter.value : ''), destinationIds: item ? [...planDestinationIds(item)] : [], otherDestination: item?.otherDestination || '', activity: item?.activity || '', note: item?.note || '' })
   Object.assign(planDestinationFilter, { query: '', tag: '', visit: 'all' })
   showPlanModal.value = true
 }
 async function savePlan() {
-  const selected = state.destinations.find(x => x.id === planForm.destinationId)
-  const destination = selected ? `${selected.name}${selected.location ? ` · ${selected.location}` : ''}` : planForm.otherDestination.trim()
-  if (!destination || !planForm.date || !planForm.activity.trim()) return
+  if ((!planForm.destinationIds.length && !planForm.otherDestination.trim()) || !planForm.date || !planForm.activity.trim()) { showToast(t('selectPlanPlace')); return }
   const id = editingPlanId.value || `plan-${crypto.randomUUID?.() || Date.now()}`
-  const value = { id, date: planForm.date, time: planForm.time || '', destinationId: selected?.id || '', otherDestination: selected ? '' : planForm.otherDestination.trim(), destination, activity: planForm.activity.trim(), note: planForm.note }
-  await commitWorkspace(() => { const index = state.plans.findIndex(x => x.id === id); if (index >= 0) state.plans[index] = value; else state.plans.push(value) }, t(editingPlanId.value ? 'planUpdated' : 'planAdded'))
-  showPlanModal.value = false
+  const value = normalizePlan({ ...planForm, id, destinationIds: [...planForm.destinationIds], activity: planForm.activity.trim() }, state.destinations)
+  if (await commitWorkspace(() => { const index = state.plans.findIndex(x => x.id === id); if (index >= 0) state.plans[index] = value; else state.plans.push(value) }, t(editingPlanId.value ? 'planUpdated' : 'planAdded'))) showPlanModal.value = false
+}
+function togglePlanDestination(id) {
+  planForm.destinationIds = planForm.destinationIds.includes(id) ? planForm.destinationIds.filter(value => value !== id) : [...planForm.destinationIds, id]
+}
+function movePlanDestination(index, offset) {
+  const next = index + offset
+  if (next < 0 || next >= planForm.destinationIds.length) return
+  const ids = [...planForm.destinationIds]
+  ;[ids[index], ids[next]] = [ids[next], ids[index]]
+  planForm.destinationIds = ids
 }
 async function deletePlan(item) {
   if (!confirm(t('confirmDeletePlan', { name: item.destination }))) return
   await commitWorkspace(() => { state.plans = state.plans.filter(x => x.id !== item.id) }, t('planDeleted'))
+}
+async function addTrip() {
+  const name = newTripName.value.trim()
+  if (!name) return
+  const id = `trip-${crypto.randomUUID?.() || Date.now()}`
+  if (await commitWorkspace(() => state.trips.push({ id, name }), t('tripSaved'))) {
+    newTripName.value = ''
+    tripFilter.value = id
+  }
+}
+async function renameTrip(trip) {
+  const name = prompt(t('tripName'), trip.name)?.trim()
+  if (name && name !== trip.name) await commitWorkspace(() => { trip.name = name }, t('tripSaved'))
+}
+async function deleteTrip(trip) {
+  if (!confirm(t('confirmDeleteTrip', { name: trip.name }))) return
+  if (await commitWorkspace(() => {
+    state.trips = state.trips.filter(item => item.id !== trip.id)
+    state.plans.forEach(plan => { if (plan.tripId === trip.id) plan.tripId = '' })
+  }, t('tripDeleted'))) tripFilter.value = 'all'
+}
+function beginExport(type, id) {
+  exportScopeKey.value = `${type}:${id}`
+  chooseView('exchange')
 }
 
 async function addTag() {
@@ -317,25 +368,25 @@ async function editHome() {
   await commitWorkspace(() => { state.profile.home = value.trim() }, t('departureUpdated'))
 }
 
-function downloadBackup() { const blob = new Blob([JSON.stringify(packet(), null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `travelnote-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(url); showToast(t('download')) }
-async function copyPacket() { try { await navigator.clipboard.writeText(encodePacket(packet())); showToast(t('copy')) } catch { showToast(t('invalidPacket')) } }
+function downloadBackup() { const blob = new Blob([JSON.stringify(exportPacket.value, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `travelnote-${exportPacket.value.scope.type}-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(url); showToast(t('download')) }
+async function copyPacket() { try { await navigator.clipboard.writeText(encodePacket(exportPacket.value)); showToast(t('copy')) } catch { showToast(t('invalidPacket')) } }
 async function handleImport(event) {
   const file = event.target.files?.[0]; if (!file) return
   try {
     const data = JSON.parse(await file.text())
     if (data.format !== 'travelnote' || !Array.isArray(data.destinations) || !Array.isArray(data.plans)) throw new Error('invalid')
     if (data.accountId && String(data.accountId) !== String(account.value?.id)) throw new Error('account')
-    const previous = cloneState(); replaceState(data)
+    const previous = cloneState(); replaceState(mergeImport(previous, data))
     try { await syncWorkspace(); showToast(t('importSuccess')) } catch (error) { replaceState(previous); throw error }
   } catch (error) { showToast(error.message === 'account' ? t('accountMismatch') : t('invalidPacket')) }
   event.target.value = ''
 }
 async function refreshQr() {
   if (activeView.value !== 'exchange') return
-  qrText.value = encodePacket(packet())
+  qrText.value = encodePacket(exportPacket.value)
   await nextTick()
   for (const [canvas, width] of [[qrCanvas.value, 512], [qrLargeCanvas.value, 768]]) if (canvas && (showQrLightbox.value || canvas === qrCanvas.value)) {
-    try { await QRCode.toCanvas(canvas, qrText.value, { width, margin: 4, errorCorrectionLevel: 'M', color: { dark: '#14373b', light: '#fffdf9' } }) } catch { showToast(t('qrFailed')) }
+    try { await QRCode.toCanvas(canvas, qrText.value, { width, margin: 4, errorCorrectionLevel: 'M', color: { dark: '#14373b', light: '#fffdf9' } }) } catch { canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height); showToast(t('qrFailed')) }
   }
 }
 function openQr() { showQrLightbox.value = true; nextTick(refreshQr) }
@@ -343,6 +394,11 @@ function setLocale(value) { locale.value = value; localStorage.setItem('travelno
 function noteLabel(noteRef) { return noteRef ? t('noteCollapse') : t('noteExpand') }
 
 watch(activeView, () => { nextTick(refreshQr) })
+watch(exportScopeKey, () => { nextTick(refreshQr) })
+watch(() => [state.trips.map(trip => trip.id).join(','), state.plans.map(plan => plan.id).join(',')], () => {
+  const key = exportScopeKey.value
+  if ((key.startsWith('trip:') && !state.trips.some(trip => trip.id === key.slice(5))) || (key.startsWith('plan:') && !state.plans.some(plan => plan.id === key.slice(5)))) exportScopeKey.value = 'all'
+})
 onMounted(() => { document.documentElement.lang = locale.value === 'zh' ? 'zh-CN' : locale.value; bootstrap() })
 </script>
 
@@ -393,9 +449,28 @@ onMounted(() => { document.documentElement.lang = locale.value === 'zh' ? 'zh-CN
           <div class="destination-list"><article v-for="item in filteredDestinations" :key="item.id" class="destination-card"><div class="card-topline"><div class="card-pin" :class="tagTone(item.tags?.[0])">⌖</div><div class="card-actions"><button class="small-icon" @click="openDestination(item.id)">✎</button><button class="small-icon" @click="deleteDestination(item)">×</button></div></div><h3>{{ item.name }}</h3><div class="region">{{ item.region }}<span v-if="item.location"> · {{ item.location }}</span></div><div class="tag-list"><span v-for="tag in item.tags" :key="tag" class="tag" :class="tagTone(tag)">{{ tag }}</span></div><div class="transport-line"><span>⇢</span><span>{{ item.transport || t('defaultTransport') }}</span></div><div v-if="item.arrangement" class="transport-line"><span>▣</span><span>{{ item.arrangement }}</span></div><div v-if="item.note" class="note-block"><button class="note-toggle" @click="$event.currentTarget.nextElementSibling.hidden = !$event.currentTarget.nextElementSibling.hidden; $event.currentTarget.classList.toggle('expanded')">{{ t('viewNote') }} <span>{{ t('noteExpand') }}</span></button><div class="note-content" hidden v-html="markdownHtml(item.note)"></div></div><div class="visit-row"><span>{{ t('visitedCount', { count: Number(item.visitCount) || 0 }) }}</span><button class="small-visit-button" type="button" @click="incrementVisitCount(item)">＋1</button></div><div class="card-footer"><span class="status-label"><i class="dot" :class="statusClass(item.status)"></i>{{ statusLabel(item.status) }}</span></div></article><div v-if="!filteredDestinations.length" class="empty-state"><strong>{{ t('noDestinations') }}</strong><span>{{ t('noDestinationsHint') }}</span></div></div>
         </section>
 
-        <section v-else-if="activeView === 'plans'" class="view-section"><div class="plans-header"><div><span class="eyebrow">Your itinerary</span><h2>{{ t('itinerary') }}</h2><p>{{ t('itineraryIntro') }}</p></div><button class="primary-button" @click="openPlan()">＋ {{ t('addPlan') }}</button></div><div class="plan-list"><article v-for="plan in sortedPlans" :key="plan.id" class="plan-row"><div class="plan-date"><strong>{{ formatDate(plan.date) }}</strong><small>{{ formatWeek(plan.date) }}</small></div><div class="plan-main"><h3>{{ plan.destination }}</h3><p>{{ plan.activity }}</p><div v-if="plan.note" class="note-block"><button class="note-toggle" @click="$event.currentTarget.nextElementSibling.hidden = !$event.currentTarget.nextElementSibling.hidden; $event.currentTarget.classList.toggle('expanded')">{{ t('viewNote') }} <span>{{ t('noteExpand') }}</span></button><div class="note-content" hidden v-html="markdownHtml(plan.note)"></div></div></div><time>{{ plan.time || t('allDay') }}</time><div class="plan-actions"><button class="small-icon" @click="openPlan(plan.id)">✎</button><button class="small-icon" @click="deletePlan(plan)">×</button></div></article><div v-if="!sortedPlans.length" class="empty-state"><strong>{{ t('noPlans') }}</strong><span>{{ t('noPlansHint') }}</span></div></div></section>
+        <section v-else-if="activeView === 'plans'" class="view-section"><div class="plans-header"><div><span class="eyebrow">Your itinerary</span><h2>{{ t('itinerary') }}</h2><p>{{ t('itineraryIntro') }}</p></div><button class="primary-button" @click="openPlan()">＋ {{ t('addPlan') }}</button></div>
+<div class="trip-manager">
+  <form class="add-trip-row" @submit.prevent="addTrip"><label>{{ t('newTrip') }}<input v-model="newTripName" maxlength="255" :placeholder="t('tripName')" required /></label><button class="primary-button">{{ t('createTrip') }}</button></form>
+  <div class="trip-filter-row"><label>{{ t('trip') }}<select v-model="tripFilter"><option value="all">{{ t('allTrips') }}</option><option value="ungrouped">{{ t('ungrouped') }}</option><option v-for="trip in state.trips" :key="trip.id" :value="trip.id">{{ trip.name }}</option></select></label></div>
+  <div v-for="trip in state.trips.filter(item => item.id === tripFilter)" :key="trip.id" class="trip-summary">
+    <strong>{{ trip.name }}</strong><span>{{ state.plans.filter(plan => plan.tripId === trip.id).length }} {{ t('plans') }}</span>
+    <button class="secondary-button" @click="beginExport('trip', trip.id)">{{ t('exportTrip') }}</button>
+    <button class="text-button" @click="renameTrip(trip)">{{ t('edit') }}</button>
+    <button class="text-button" @click="deleteTrip(trip)">{{ t('remove') }}</button>
+  </div>
+</div>
+<div class="plan-list"><article v-for="plan in displayedPlans" :key="plan.id" class="plan-row"><div class="plan-date"><strong>{{ formatDate(plan.date) }}</strong><small>{{ formatWeek(plan.date) }}</small></div><div class="plan-main"><small v-if="plan.tripId" class="trip-badge">{{ state.trips.find(trip => trip.id === plan.tripId)?.name }}</small><h3>{{ plan.destination }}</h3><p>{{ plan.activity }}</p><div v-if="plan.note" class="note-block"><button class="note-toggle" @click="$event.currentTarget.nextElementSibling.hidden = !$event.currentTarget.nextElementSibling.hidden; $event.currentTarget.classList.toggle('expanded')">{{ t('viewNote') }} <span>{{ t('noteExpand') }}</span></button><div class="note-content" hidden v-html="markdownHtml(plan.note)"></div></div></div><time>{{ plan.time || t('allDay') }}</time><div class="plan-actions"><button class="small-icon" :title="t('exportPlan')" :aria-label="t('exportPlan')" @click="beginExport('plan', plan.id)">↗</button><button class="small-icon" @click="openPlan(plan.id)">✎</button><button class="small-icon" @click="deletePlan(plan)">×</button></div></article><div v-if="!displayedPlans.length" class="empty-state"><strong>{{ t('noPlans') }}</strong><span>{{ t('noPlansHint') }}</span></div></div></section>
 
-        <section v-else-if="activeView === 'exchange'" class="view-section"><div class="exchange-hero"><div><span class="eyebrow">Offline handoff</span><h2>{{ t('exchangeTitle') }}</h2><p>{{ t('exchangeIntro') }}</p></div><span class="hero-symbol">↗</span></div><div class="exchange-grid"><article class="exchange-card"><h3>{{ t('generateQr') }}</h3><p>{{ t('qrHint') }}</p><div class="qr-stage"><button class="qr-button" @click="openQr"><canvas ref="qrCanvas" width="512" height="512"></canvas></button></div><div class="data-code">{{ qrText.slice(0, 120) }}…</div><button class="secondary-button" @click="copyPacket">{{ t('copy') }}</button></article><article class="exchange-card"><h3>{{ t('exportImport') }}</h3><p>{{ t('exportHint') }}</p><label class="file-drop" for="import-file"><div><strong>{{ t('chooseJson') }}</strong><small>{{ t('jsonOnly') }}</small></div><input id="import-file" type="file" accept="application/json,.json" @change="handleImport" /></label><button class="primary-button" @click="downloadBackup">{{ t('download') }}</button></article></div></section>
+        <section v-else-if="activeView === 'exchange'" class="view-section"><div class="exchange-hero"><div><span class="eyebrow">Offline handoff</span><h2>{{ t('exchangeTitle') }}</h2><p>{{ t('exchangeIntro') }}</p></div><span class="hero-symbol">↗</span></div>
+<div class="export-scope">
+  <label>{{ t('exportScope') }}<select v-model="exportScopeKey">
+    <option value="all">{{ t('exportAll') }}</option>
+    <optgroup :label="t('trip')"><option v-for="trip in state.trips" :key="trip.id" :value="'trip:' + trip.id">{{ trip.name }}</option></optgroup>
+    <optgroup :label="t('exportPlan')"><option v-for="plan in sortedPlans" :key="plan.id" :value="'plan:' + plan.id">{{ plan.date }} · {{ plan.destination }}</option></optgroup>
+  </select></label>
+  <p>{{ t('exportScopeHint') }}</p><small>{{ exportPacket.plans.length }} {{ t('plans') }} · {{ exportPacket.destinations.length }} {{ t('destinations') }}</small>
+</div><div class="exchange-grid"><article class="exchange-card"><h3>{{ t('generateQr') }}</h3><p>{{ t('qrHint') }}</p><div class="qr-stage"><button class="qr-button" @click="openQr"><canvas ref="qrCanvas" width="512" height="512"></canvas></button></div><div class="data-code">{{ qrText.slice(0, 120) }}…</div><button class="secondary-button" @click="copyPacket">{{ t('copy') }}</button></article><article class="exchange-card"><h3>{{ t('exportImport') }}</h3><p>{{ t('exportHint') }}</p><label class="file-drop" for="import-file"><div><strong>{{ t('chooseJson') }}</strong><small>{{ t('jsonOnly') }}</small></div><input id="import-file" type="file" accept="application/json,.json" @change="handleImport" /></label><button class="primary-button" @click="downloadBackup">{{ t('download') }}</button></article></div></section>
 
         <section v-else class="view-section"><div class="page-heading"><div><span class="eyebrow">Your tag library</span><h1>{{ t('tags') }}</h1><p>{{ t('tagIntro') }}</p></div></div><div class="tag-management-card"><div class="tag-management-intro"><div><h2>{{ t('addTag') }}</h2><p>{{ t('tagIntro') }}</p></div><div class="add-tag-row"><input v-model="tagSearchTerm" class="tag-search-input" :placeholder="t('searchTags')" /><input id="new-tag" maxlength="64" :placeholder="t('tagPlaceholder')" @keyup.enter="addTag" /><button class="primary-button" @click="addTag">＋ {{ t('addTag') }}</button></div></div><div class="tag-library"><div v-for="tag in filteredTagCatalog" :key="tag" class="tag-library-item"><div><span class="tag" :class="tagTone(tag)">{{ tag }}</span><small>{{ state.destinations.filter(item => item.tags?.includes(tag)).length }} {{ t('used') }}</small></div><button v-if="systemTags.includes(tag)" class="tag-toggle" :class="{ enabled: state.enabledSystemTags.includes(tag) }" @click="toggleSystemTag(tag)">{{ state.enabledSystemTags.includes(tag) ? t('enabled') : t('disabled') }}</button><button v-else class="small-icon" @click="deleteTag(tag)">×</button></div></div></div></section>
       </div>
@@ -406,7 +481,25 @@ onMounted(() => { document.documentElement.lang = locale.value === 'zh' ? 'zh-CN
 
   <div v-if="showDestinationModal" class="modal-backdrop" @click.self="showDestinationModal = false"><section class="modal destination-modal" role="dialog"><div class="modal-header"><div><span class="eyebrow">{{ t('travelReason') }}</span><h2>{{ editingDestinationId ? t('editDestinationTitle') : t('addDestinationTitle') }}</h2></div><button class="close-button" @click="showDestinationModal = false">×</button></div><form @submit.prevent="saveDestination"><div class="form-grid two-col"><label>{{ t('destinationName') }}<input v-model="destinationForm.name" required /></label><label>{{ t('region') }}<input v-model="destinationForm.region" required /></label></div><label>{{ t('location') }}<input v-model="destinationForm.location" /></label><label>{{ t('visitCount') }}<input v-model.number="destinationForm.visitCount" type="number" min="0" step="1" /></label><div class="form-section-label">{{ t('why') }} <span>{{ t('multi') }}</span></div><div class="tag-picker"><button v-for="tag in destinationTagOptions" :key="tag" type="button" class="tag-choice" :class="{ selected: destinationForm.tags.includes(tag) }" @click="toggleDestinationTag(tag)">{{ tag }}</button></div><label>{{ t('transport') }}<textarea v-model="destinationForm.transport" rows="3"></textarea></label><label>{{ t('arrangement') }}<textarea v-model="destinationForm.arrangement" rows="3"></textarea></label><label>{{ t('note') }} <span class="field-hint">{{ t('markdownHint') }}</span><textarea v-model="destinationForm.note" rows="5"></textarea></label><div class="modal-footer"><button type="button" class="text-button" @click="showDestinationModal = false">{{ t('cancel') }}</button><button class="primary-button">{{ t('save') }}</button></div></form></section></div>
 
-  <div v-if="showPlanModal" class="modal-backdrop" @click.self="showPlanModal = false"><section class="modal small-modal" role="dialog"><div class="modal-header"><div><span class="eyebrow">{{ t('itinerary') }}</span><h2>{{ editingPlanId ? t('editPlanTitle') : t('addPlanTitle') }}</h2></div><button class="close-button" @click="showPlanModal = false">×</button></div><form @submit.prevent="savePlan"><div class="form-grid two-col"><label>{{ t('date') }}<input v-model="planForm.date" type="date" required /></label><label>{{ t('time') }} <span class="field-hint">{{ t('allDay') }}</span><input v-model="planForm.time" type="time" /></label></div><div class="plan-filters"><div class="form-section-label">{{ t('filterDestinations') }}</div><div class="plan-filter-grid"><input v-model="planDestinationFilter.query" :placeholder="t('filterByName')" /><select v-model="planDestinationFilter.tag"><option value="">{{ t('all') }}</option><option v-for="tag in visibleTagCatalog" :key="tag" :value="tag">{{ tag }}</option></select><select v-model="planDestinationFilter.visit"><option value="all">{{ t('any') }}</option><option value="visited">{{ t('visited') }}</option><option value="unvisited">{{ t('notVisited') }}</option></select></div></div><label>{{ t('chooseDestination') }}<select v-model="planForm.destinationId"><option value="">{{ t('noChoose') }}</option><option v-for="destination in filteredPlanDestinations" :key="destination.id" :value="destination.id">{{ destination.name }} · {{ destination.region }} · {{ t('visitedCount', { count: Number(destination.visitCount) || 0 }) }}</option></select></label><div v-if="!filteredPlanDestinations.length" class="filter-empty">{{ t('noFilteredDestinations') }}</div><label>{{ t('otherDestination') }}<input v-model="planForm.otherDestination" :placeholder="t('otherPlaceholder')" /></label><label>{{ t('activity') }}<textarea v-model="planForm.activity" rows="3" required></textarea></label><label>{{ t('note') }} <span class="field-hint">{{ t('markdownHint') }}</span><textarea v-model="planForm.note" rows="5"></textarea></label><div class="modal-footer"><button type="button" class="text-button" @click="showPlanModal = false">{{ t('cancel') }}</button><button class="primary-button">{{ editingPlanId ? t('savePlan') : t('joinPlan') }}</button></div></form></section></div>
+  <div v-if="showPlanModal" class="modal-backdrop" @click.self="showPlanModal = false"><section class="modal plan-modal" role="dialog"><div class="modal-header"><div><span class="eyebrow">{{ t('itinerary') }}</span><h2>{{ editingPlanId ? t('editPlanTitle') : t('addPlanTitle') }}</h2></div><button class="close-button" @click="showPlanModal = false">×</button></div><form @submit.prevent="savePlan"><label>{{ t('trip') }}<select v-model="planForm.tripId"><option value="">{{ t('ungrouped') }}</option><option v-for="trip in state.trips" :key="trip.id" :value="trip.id">{{ trip.name }}</option></select></label><div class="form-grid two-col"><label>{{ t('date') }}<input v-model="planForm.date" type="date" required /></label><label>{{ t('time') }} <span class="field-hint">{{ t('allDay') }}</span><input v-model="planForm.time" type="time" /></label></div><div class="plan-filters"><div class="form-section-label">{{ t('filterDestinations') }}</div><div class="plan-filter-grid"><input v-model="planDestinationFilter.query" :placeholder="t('filterByName')" /><select v-model="planDestinationFilter.tag"><option value="">{{ t('all') }}</option><option v-for="tag in visibleTagCatalog" :key="tag" :value="tag">{{ tag }}</option></select><select v-model="planDestinationFilter.visit"><option value="all">{{ t('any') }}</option><option value="visited">{{ t('visited') }}</option><option value="unvisited">{{ t('notVisited') }}</option></select></div></div>
+<div class="form-section-label">{{ t('chooseDestinations') }}</div>
+<p class="field-hint">{{ t('multiPlaceHint') }}</p>
+<div class="plan-place-choices">
+  <label v-for="destination in filteredPlanDestinations" :key="destination.id" class="plan-place-choice">
+    <input type="checkbox" :checked="planForm.destinationIds.includes(destination.id)" @change="togglePlanDestination(destination.id)" />
+    <span>{{ destination.name }} · {{ destination.region }}<small>{{ t('visitedCount', { count: Number(destination.visitCount) || 0 }) }}</small></span>
+  </label>
+</div>
+<div v-if="planForm.destinationIds.length" class="selected-plan-places">
+  <div class="form-section-label">{{ t('selectedPlaces') }} ({{ planForm.destinationIds.length }})</div>
+  <div v-for="(id, index) in planForm.destinationIds" :key="id" class="selected-plan-place">
+    <span>{{ index + 1 }}. {{ state.destinations.find(item => item.id === id)?.name }}</span>
+    <button type="button" :disabled="index === 0" :aria-label="t('moveEarlier')" @click="movePlanDestination(index, -1)">↑</button>
+    <button type="button" :disabled="index === planForm.destinationIds.length - 1" :aria-label="t('moveLater')" @click="movePlanDestination(index, 1)">↓</button>
+    <button type="button" :aria-label="t('remove')" @click="togglePlanDestination(id)">×</button>
+  </div>
+</div>
+<div v-if="!filteredPlanDestinations.length" class="filter-empty">{{ t('noFilteredDestinations') }}</div><label>{{ t('otherDestination') }}<input v-model="planForm.otherDestination" :placeholder="t('otherPlaceholder')" /></label><label>{{ t('activity') }}<textarea v-model="planForm.activity" rows="3" required></textarea></label><label>{{ t('note') }} <span class="field-hint">{{ t('markdownHint') }}</span><textarea v-model="planForm.note" rows="5"></textarea></label><div class="modal-footer"><button type="button" class="text-button" @click="showPlanModal = false">{{ t('cancel') }}</button><button class="primary-button">{{ editingPlanId ? t('savePlan') : t('joinPlan') }}</button></div></form></section></div>
 
   <div v-if="showPasswordModal" class="modal-backdrop" @click.self="showPasswordModal = false"><section class="modal small-modal" role="dialog"><div class="modal-header"><div><span class="eyebrow">Account security</span><h2>{{ t('changePassword') }}</h2></div><button class="close-button" @click="showPasswordModal = false">×</button></div><form @submit.prevent="changePassword"><label>{{ t('currentPassword') }}<input v-model="passwordForm.currentPassword" type="password" required /></label><label>{{ t('newPassword') }}<input v-model="passwordForm.newPassword" type="password" minlength="8" required /></label><label>{{ t('confirmPassword') }}<input v-model="passwordForm.confirmPassword" type="password" minlength="8" required /></label><div class="login-error">{{ authError }}</div><div class="modal-footer"><button type="button" class="text-button" @click="showPasswordModal = false">{{ t('cancel') }}</button><button class="primary-button">{{ t('savePassword') }}</button></div></form></section></div>
 

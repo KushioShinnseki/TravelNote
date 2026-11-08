@@ -55,6 +55,8 @@ function decodePacket(raw) {
   if (!Array.isArray(packet.destinations) || !Array.isArray(packet.plans)) throw new Error('数据包格式不完整');
   return {
     format: 'travelnote',
+    scope: packet.scope,
+    trips: Array.isArray(packet.trips) ? packet.trips : [],
     version: Number(packet.version || 1),
     accountId: text(packet.accountId),
     profile: { home: text(packet.profile && packet.profile.home) },
@@ -72,6 +74,7 @@ function decodePacket(raw) {
       status: text(item.status, '想去')
     })),
     plans: packet.plans.map((item, index) => ({
+      tripId: text(item.tripId), destinationIds: Array.isArray(item.destinationIds) ? item.destinationIds : [item.destinationId].filter(Boolean),
       id: text(item.id, `p-${index}`),
       date: text(item.date),
       time: text(item.time),
@@ -105,8 +108,9 @@ function syncRecords(previous, incoming) {
 }
 
 function applyPacket(previous, packet) {
-  const normalized = typeof packet === 'string' ? decodePacket(packet) : packet;
+  let normalized = typeof packet === 'string' ? decodePacket(packet) : packet;
   if (previous && previous.accountId && previous.accountId !== normalized.accountId) throw new Error('账号 ID 不匹配');
+  normalized = mergeScoped(previous, normalized);
   const destinations = syncRecords(previous && previous.destinations, normalized.destinations);
   const plans = syncRecords(previous && previous.plans, normalized.plans);
   return {
@@ -116,6 +120,7 @@ function applyPacket(previous, packet) {
       accountId: normalized.accountId,
       profile: normalized.profile,
       tagCatalog: normalized.tagCatalog,
+      trips: normalized.trips || [],
       destinations: destinations.items,
       plans: plans.items,
       syncedAt: new Date().toISOString()
@@ -126,6 +131,19 @@ function applyPacket(previous, packet) {
       plans: { created: plans.created, updated: plans.updated, deleted: plans.deleted }
     }
   };
+}
+
+function mergeScoped(previous, incoming) {
+  const scope = incoming.scope;
+  if (!scope || scope.type === 'all') return incoming;
+  if (!['trip', 'plan'].includes(scope.type) || !scope.id) throw new Error('导入范围无效');
+  if (incoming.plans.some(plan => scope.type === 'trip' ? plan.tripId !== scope.id : plan.id !== scope.id)) throw new Error('日程超出导入范围');
+  if (!previous) return incoming;
+  const upsert = (oldItems, newItems) => Array.from(new Map([...(oldItems || []), ...(newItems || [])].map(item => [item.id, item])).values());
+  return { ...previous, scope: { type: 'all' }, trips: upsert(previous.trips, incoming.trips),
+    destinations: upsert(previous.destinations, incoming.destinations),
+    plans: upsert(previous.plans.filter(plan => scope.type === 'trip' ? plan.tripId !== scope.id : plan.id !== scope.id), incoming.plans),
+    tagCatalog: unique([...(previous.tagCatalog || []), ...(incoming.tagCatalog || [])]) };
 }
 
 module.exports = { decodePacket, applyPacket };

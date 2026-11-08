@@ -3,6 +3,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
+const itineraryModel = import('./itinerary.mjs');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -264,6 +265,15 @@ async function ensureSchema() {
   await pool.query("ALTER TABLE plans ADD COLUMN IF NOT EXISTS destination_id BIGINT REFERENCES destinations(id) ON DELETE SET NULL");
   await pool.query("ALTER TABLE plans ADD COLUMN IF NOT EXISTS other_destination VARCHAR(255) NOT NULL DEFAULT ''");
   await pool.query("ALTER TABLE plans ADD COLUMN IF NOT EXISTS note TEXT NOT NULL DEFAULT ''");
+  // NULL distinguishes legacy single-place rows from explicitly empty arrays.
+  await pool.query('ALTER TABLE plans ADD COLUMN IF NOT EXISTS destination_ids TEXT[]');
+  await pool.query(`CREATE TABLE IF NOT EXISTS trips (
+    account_id BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    public_id VARCHAR(80) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    PRIMARY KEY (account_id, public_id)
+  )`);
+  await pool.query("ALTER TABLE plans ADD COLUMN IF NOT EXISTS trip_id VARCHAR(80) NOT NULL DEFAULT ''");
 
   await pool.query('CREATE INDEX IF NOT EXISTS destinations_account_idx ON destinations (account_id, created_at DESC)');
   await pool.query('CREATE INDEX IF NOT EXISTS plans_account_idx ON plans (account_id, plan_date, plan_time)');
@@ -289,11 +299,13 @@ async function ensureSchema() {
 }
 
 async function readWorkspace(id) {
+  const { normalizePlan } = await itineraryModel;
   const client = await pool.connect();
   try {
     await ensureAccountDefaults(client, id);
     const profileResult = await client.query('SELECT home, enabled_system_tags FROM profiles WHERE account_id = $1', [id]);
     const tagResult = await client.query('SELECT name FROM tags WHERE account_id = $1 ORDER BY created_at, id', [id]);
+    const tripResult = await client.query('SELECT public_id AS id, name FROM trips WHERE account_id = $1 ORDER BY name, public_id', [id]);
     const destinationResult = await client.query(`
       SELECT d.public_id AS id, d.name, d.region, d.location, d.transport, d.arrangement, d.note, d.visit_count AS "visitCount", d.status,
         COALESCE(array_agg(t.name ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '{}') AS tags
@@ -307,7 +319,7 @@ async function readWorkspace(id) {
     const planResult = await client.query(`
       SELECT p.public_id AS id, TO_CHAR(p.plan_date, 'YYYY-MM-DD') AS date,
         COALESCE(TO_CHAR(p.plan_time, 'HH24:MI'), '') AS time, d.public_id AS "destinationId",
-        p.destination, p.other_destination AS "otherDestination", p.activity, p.note
+        p.destination, p.trip_id AS "tripId", p.destination_ids AS "destinationIds", p.other_destination AS "otherDestination", p.activity, p.note
       FROM plans p
       LEFT JOIN destinations d ON d.id = p.destination_id
       WHERE p.account_id = $1
@@ -316,12 +328,13 @@ async function readWorkspace(id) {
 
     return {
       format: 'travelnote',
-      version: 2,
+      version: 3,
       profile: { home: profileResult.rows[0]?.home || defaultHome },
       enabledSystemTags: Array.isArray(profileResult.rows[0]?.enabled_system_tags) ? profileResult.rows[0].enabled_system_tags : [...defaultTags],
       tagCatalog: tagResult.rows.map(row => row.name),
       destinations: destinationResult.rows,
-      plans: planResult.rows
+      trips: tripResult.rows,
+      plans: planResult.rows.map(plan => normalizePlan(plan, destinationResult.rows))
     };
   } finally {
     client.release();
@@ -333,16 +346,30 @@ function validateWorkspace(workspace) {
     return '数据格式不正确';
   }
   if (workspace.destinations.length > 5000 || workspace.plans.length > 10000) return '数据量超过限制';
+  if (workspace.trips != null && (!Array.isArray(workspace.trips) || workspace.trips.length > 1000)) return '出行计划数据格式不正确';
+  const tripIds = new Set();
+  for (const trip of workspace.trips || []) {
+    if (!trip || !text(trip.id) || text(trip.id).length > 80 || !text(trip.name) || text(trip.name).length > 255 || tripIds.has(trip.id)) return '出行计划名称或 ID 不正确';
+    tripIds.add(trip.id);
+  }
   for (const item of workspace.destinations) {
     if (!text(item.name)) return '地点名称不能为空';
   }
+  const available = new Set(workspace.destinations.map(item => String(item.id)));
   for (const plan of workspace.plans) {
-    if (!text(plan.date) || !text(plan.destination)) return '日程日期和地点不能为空';
+    if (!plan || !/^\d{4}-\d{2}-\d{2}$/.test(text(plan.date))) return '日程日期不正确';
+    if (plan.tripId && !tripIds.has(plan.tripId)) return '日程所属出行计划不存在';
+    if (plan.destinationIds != null && (!Array.isArray(plan.destinationIds) || plan.destinationIds.length > 5000 || plan.destinationIds.some(value => typeof value !== 'string'))) return '日程地点列表不正确';
+    const ids = Array.isArray(plan.destinationIds) ? plan.destinationIds : [plan.destinationId].filter(Boolean);
+    if (ids.some(value => !available.has(String(value)))) return '日程包含不存在的地点';
+    if (!ids.length && !text(plan.otherDestination) && !text(plan.destination)) return '日程地点不能为空';
+    if (text(plan.time) && !/^([01]\d|2[0-3]):[0-5]\d$/.test(text(plan.time))) return '日程时间不正确';
   }
   return null;
 }
 
 async function replaceWorkspace(id, workspace) {
+  const { normalizePlan } = await itineraryModel;
   const validationError = validateWorkspace(workspace);
   if (validationError) {
     const error = new Error(validationError);
@@ -356,6 +383,10 @@ async function replaceWorkspace(id, workspace) {
     await ensureAccountDefaults(client, id);
     await client.query('DELETE FROM destinations WHERE account_id = $1', [id]);
     await client.query('DELETE FROM plans WHERE account_id = $1', [id]);
+    await client.query('DELETE FROM trips WHERE account_id = $1', [id]);
+    for (const trip of workspace.trips || []) {
+      await client.query('INSERT INTO trips (account_id, public_id, name) VALUES ($1, $2, $3)', [id, text(trip.id), text(trip.name)]);
+    }
     await client.query('DELETE FROM tags WHERE account_id = $1', [id]);
 
     const profileHome = text(workspace.profile?.home, defaultHome).slice(0, 255) || defaultHome;
@@ -379,16 +410,21 @@ async function replaceWorkspace(id, workspace) {
       visitCount: Math.max(0, Math.floor(Number(item.visitCount) || 0)),
       status: text(item.status, '想去').slice(0, 32) || '想去'
     }));
-    const planItems = workspace.plans.map(item => ({
-      id: publicId(item.id, 'p'),
-      date: text(item.date),
-      time: text(item.time),
-      destinationId: text(item.destinationId),
-      destination: text(item.destination).slice(0, 255),
-      otherDestination: text(item.otherDestination).slice(0, 255),
-      note: text(item.note),
-      activity: text(item.activity)
-    }));
+    const planItems = workspace.plans.map(value => {
+      const item = normalizePlan(value, destinationItems);
+      return {
+        id: publicId(item.id, 'p'),
+        date: text(item.date),
+        time: text(item.time),
+        destinationId: text(item.destinationId),
+        destinationIds: item.destinationIds,
+        tripId: text(item.tripId),
+        destination: text(item.destination).slice(0, 255),
+        otherDestination: text(item.otherDestination).slice(0, 255),
+        note: text(item.note),
+        activity: text(item.activity)
+      };
+    });
     const allTags = uniqueStrings([
       ...defaultTags,
       ...uniqueStrings(workspace.tagCatalog),
@@ -427,8 +463,8 @@ async function replaceWorkspace(id, workspace) {
       while (planIds.has(itemId)) itemId = publicId('', 'p');
       planIds.add(itemId);
       await client.query(
-        `INSERT INTO plans (account_id, public_id, plan_date, plan_time, destination_id, destination, other_destination, activity, note)
-         VALUES ($1, $2, $3::date, $4::time, $5, $6, $7, $8, $9)`,
+        `INSERT INTO plans (account_id, public_id, plan_date, plan_time, destination_id, destination, other_destination, activity, note, destination_ids, trip_id)
+         VALUES ($1, $2, $3::date, $4::time, $5, $6, $7, $8, $9, $10, $11)`,
         [
           id,
           itemId,
@@ -438,7 +474,9 @@ async function replaceWorkspace(id, workspace) {
           item.destination || item.otherDestination || '未指定地点',
           item.otherDestination,
           item.activity,
-          item.note
+          item.note,
+          item.destinationIds,
+          item.tripId
         ]
       );
     }

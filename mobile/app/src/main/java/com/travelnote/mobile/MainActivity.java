@@ -265,6 +265,15 @@ public class MainActivity extends Activity {
         row.addView(date, new LinearLayout.LayoutParams(dp(88), -2));
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
+        String tripId = item.optString("tripId", "");
+        JSONArray trips = packet == null ? null : packet.optJSONArray("trips");
+        if (!tripId.isEmpty() && trips != null) for (int i = 0; i < trips.length(); i++) {
+            JSONObject trip = trips.optJSONObject(i);
+            if (trip != null && tripId.equals(trip.optString("id"))) {
+                body.addView(text(trip.optString("name"), 11, CORAL, false));
+                break;
+            }
+        }
         body.addView(text(item.optString("destination", "未命名安排"), 15, INK, true));
         body.addView(text(item.optString("activity", ""), 12, MUTED, false), marginParams(0, 4, 0, 0));
         String note = item.optString("note", "");
@@ -503,6 +512,7 @@ public class MainActivity extends Activity {
                 showError("账号 ID 不匹配，已拒绝导入");
                 return;
             }
+            parsed = mergeScopedPacket(packet, parsed);
             int[] destinations = countChanges(packet == null ? null : packet.optJSONArray("destinations"), parsed.optJSONArray("destinations"));
             int[] plans = countChanges(packet == null ? null : packet.optJSONArray("plans"), parsed.optJSONArray("plans"));
             JSONObject previous = packet;
@@ -532,6 +542,50 @@ public class MainActivity extends Activity {
             Log.e(TAG, "导入 TravelNote 数据失败", e);
             showError("TravelNote 数据包处理失败，请重试");
         }
+    }
+
+    private JSONObject mergeScopedPacket(JSONObject previous, JSONObject incoming) throws JSONException {
+        JSONObject scope = incoming.optJSONObject("scope");
+        if (scope == null || "all".equals(scope.optString("type"))) return incoming;
+        String type = scope.optString("type");
+        String scopeId = scope.optString("id");
+        if (!("trip".equals(type) || "plan".equals(type)) || scopeId.isEmpty()) throw new JSONException("Invalid scope");
+        JSONArray incomingPlans = incoming.getJSONArray("plans");
+        for (int i = 0; i < incomingPlans.length(); i++) {
+            JSONObject plan = incomingPlans.getJSONObject(i);
+            if (!scopeId.equals(plan.optString("trip".equals(type) ? "tripId" : "id"))) throw new JSONException("Plan outside scope");
+        }
+        if (previous == null) return incoming;
+        JSONObject merged = new JSONObject(previous.toString());
+        JSONArray retained = new JSONArray();
+        JSONArray oldPlans = previous.optJSONArray("plans");
+        if (oldPlans != null) for (int i = 0; i < oldPlans.length(); i++) {
+            JSONObject plan = oldPlans.getJSONObject(i);
+            if (!scopeId.equals(plan.optString("trip".equals(type) ? "tripId" : "id"))) retained.put(plan);
+        }
+        merged.put("plans", mergeRecords(retained, incomingPlans));
+        merged.put("destinations", mergeRecords(previous.optJSONArray("destinations"), incoming.optJSONArray("destinations")));
+        merged.put("trips", mergeRecords(previous.optJSONArray("trips"), incoming.optJSONArray("trips")));
+        java.util.LinkedHashSet<String> tags = new java.util.LinkedHashSet<>();
+        for (JSONObject source : new JSONObject[]{previous, incoming}) {
+            JSONArray values = source.optJSONArray("tagCatalog");
+            if (values != null) for (int i = 0; i < values.length(); i++) tags.add(values.optString(i));
+        }
+        merged.put("tagCatalog", new JSONArray(tags));
+        merged.put("scope", new JSONObject().put("type", "all"));
+        merged.put("exportedAt", incoming.optString("exportedAt"));
+        return merged;
+    }
+
+    private JSONArray mergeRecords(JSONArray previous, JSONArray incoming) throws JSONException {
+        java.util.LinkedHashMap<String, JSONObject> records = new java.util.LinkedHashMap<>();
+        for (JSONArray source : new JSONArray[]{previous, incoming}) {
+            if (source != null) for (int i = 0; i < source.length(); i++) {
+                JSONObject record = source.getJSONObject(i);
+                records.put(record.getString("id"), record);
+            }
+        }
+        return new JSONArray(records.values());
     }
 
     private JSONObject parsePacket(String raw) throws JSONException {
