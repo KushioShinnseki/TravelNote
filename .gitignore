@@ -8,3 +8,8 @@ artifacts/
 *.jks
 signing-secrets.txt
 *.keystore.base64
+mobile-local/.gradle/
+mobile-local/build/
+mobile-local/app/build/
+mobile-local/local.properties
+mobile-local/app/src/main/assets/
