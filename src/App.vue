@@ -6,6 +6,9 @@ import { normalizePlan, planDestinationIds } from '../server/itinerary.mjs'
 import { selectExport, mergeImport } from '../server/transfer.mjs'
 
 const { t, locale } = useI18n()
+const isLocal = globalThis.TRAVELNOTE_LOCAL === true
+const isNativeLocal = isLocal && Boolean(window.TravelNoteLocal)
+const localStorageKey = 'travelnote-local-workspace-v1'
 
 const systemTags = ['自然风光', '文化历史', '美食探索', '建筑空间', '慢节奏', '周末短途', '艺术展览', '朋友同行']
 const tagClass = { 自然风光: 'green', 文化历史: 'blue', 建筑空间: 'blue', 慢节奏: 'green', 艺术展览: 'blue', 朋友同行: 'green' }
@@ -15,7 +18,7 @@ const account = ref(null)
 const authenticated = ref(false)
 const authMode = ref('login')
 const authError = ref('')
-const activeView = ref('destinations')
+const activeView = ref(isLocal ? 'plans' : 'destinations')
 const activeFilter = ref('全部')
 const searchTerm = ref('')
 const tagSearchTerm = ref('')
@@ -49,10 +52,10 @@ const planDestinationFilter = reactive({ query: '', tag: '', visit: 'all' })
 const navItems = computed(() => [
   { id: 'destinations', icon: '✦', label: t('inspiration'), count: state.destinations.length },
   { id: 'plans', icon: '▣', label: t('plans'), count: state.plans.length },
-  { id: 'exchange', icon: '↗', label: t('exchange') },
+  { id: 'exchange', icon: '↗', label: t(isLocal ? 'localBackups' : 'exchange') },
   { id: 'tags', icon: '#', label: t('tags'), count: state.tagCatalog.length }
 ])
-const pageTitle = computed(() => ({ destinations: t('inspiration'), plans: t('plans'), exchange: t('exchange'), tags: t('tags') }[activeView.value]))
+const pageTitle = computed(() => ({ destinations: t('inspiration'), plans: t('plans'), exchange: t(isLocal ? 'localBackups' : 'exchange'), tags: t('tags') }[activeView.value]))
 const visibleTagCatalog = computed(() => state.tagCatalog.filter(tag => !systemTags.includes(tag) || state.enabledSystemTags.includes(tag)))
 const destinationTagOptions = computed(() => [...new Set([...visibleTagCatalog.value, ...destinationForm.tags])])
 const filteredTagCatalog = computed(() => {
@@ -107,7 +110,7 @@ function replaceState(next) {
 }
 
 function packet() {
-  return { format: 'travelnote', version: 3, accountId: String(account.value?.id || ''), exportedAt: new Date().toISOString(), profile: state.profile, enabledSystemTags: state.enabledSystemTags, tagCatalog: state.tagCatalog, destinations: state.destinations, trips: state.trips, plans: state.plans }
+  return { format: 'travelnote', version: 3, ...(isLocal ? { source: 'travelnote-local' } : {}), accountId: String(account.value?.id || ''), exportedAt: new Date().toISOString(), profile: state.profile, enabledSystemTags: state.enabledSystemTags, tagCatalog: state.tagCatalog, destinations: state.destinations, trips: state.trips, plans: state.plans }
 }
 
 function encodePacket(value) {
@@ -155,6 +158,15 @@ async function loadWorkspace() {
 }
 
 async function syncWorkspace() {
+  if (isLocal) {
+    replaceState(state)
+    const json = JSON.stringify(packet())
+    if (window.TravelNoteLocal) {
+      if (!window.TravelNoteLocal.writeWorkspace(json)) throw new Error(t('localSaveFailed'))
+    } else localStorage.setItem(localStorageKey, json)
+    await refreshQr()
+    return
+  }
   const remote = await apiRequest('/api/workspace', { method: 'PUT', body: JSON.stringify(packet()) })
   replaceState(remote)
   persistLocal()
@@ -168,6 +180,21 @@ async function commitWorkspace(mutator, message) {
 }
 
 async function bootstrap() {
+  if (isLocal) {
+    try {
+      const raw = window.TravelNoteLocal ? window.TravelNoteLocal.readWorkspace() : localStorage.getItem(localStorageKey)
+      const saved = raw ? JSON.parse(raw) : emptyState()
+      if (raw && (saved.format !== 'travelnote' || !Array.isArray(saved.destinations) || !Array.isArray(saved.plans))) throw new Error(t('invalidPacket'))
+      account.value = { id: String(saved.accountId || `local-${crypto.randomUUID?.() || Date.now() + '-' + Math.random().toString(36).slice(2)}`), username: t('localName') }
+      replaceState(saved)
+      authenticated.value = true
+      await syncWorkspace()
+    } catch (error) {
+      authenticated.value = false
+      authError.value = t('localLoadFailed') + ' ' + error.message
+    }
+    return
+  }
   try {
     const data = await apiRequest('/api/auth/me')
     account.value = data.account
@@ -263,13 +290,13 @@ async function saveDestination() {
   if (!destinationForm.name.trim()) return
   const id = editingDestinationId.value || `destination-${crypto.randomUUID?.() || Date.now()}`
   const value = { id, name: destinationForm.name.trim(), region: destinationForm.region.trim(), location: destinationForm.location.trim(), transport: destinationForm.transport.trim(), arrangement: destinationForm.arrangement.trim(), note: destinationForm.note, tags: [...destinationForm.tags], visitCount: Math.max(0, Math.floor(Number(destinationForm.visitCount) || 0)), status: state.destinations.find(x => x.id === id)?.status || '想去' }
-  await commitWorkspace(() => {
+  const saved = await commitWorkspace(() => {
     const index = state.destinations.findIndex(x => x.id === id)
     if (index >= 0) state.destinations[index] = value
     else state.destinations.push(value)
     state.plans = state.plans.map(plan => normalizePlan(plan, state.destinations))
   }, t(editingDestinationId.value ? 'destinationUpdated' : 'destinationAdded'))
-  showDestinationModal.value = false
+  if (saved) showDestinationModal.value = false
 }
 async function deleteDestination(item) {
   if (!confirm(t('confirmDeleteDestination', { name: item.name }))) return
@@ -368,20 +395,41 @@ async function editHome() {
   await commitWorkspace(() => { state.profile.home = value.trim() }, t('departureUpdated'))
 }
 
-function downloadBackup() { const blob = new Blob([JSON.stringify(exportPacket.value, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `travelnote-${exportPacket.value.scope.type}-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(url); showToast(t('download')) }
+function downloadBackup() {
+  const json = JSON.stringify(exportPacket.value, null, 2)
+  const name = `travelnote-${exportPacket.value.scope.type}-${new Date().toISOString().slice(0, 10)}.json`
+  if (isLocal && window.TravelNoteLocal) { window.TravelNoteLocal.exportBackup(json, name); return }
+  const blob = new Blob([json], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = name; link.click(); URL.revokeObjectURL(url); showToast(t('download'))
+}
+function requestLocalImport() {
+  if (window.TravelNoteLocal) window.TravelNoteLocal.importBackup()
+  else document.getElementById('import-file')?.click()
+}
+async function clearLocalData() {
+  if (!confirm(t('confirmClearLocal'))) return
+  await commitWorkspace(() => { replaceState(emptyState()); exportScopeKey.value = 'all'; tripFilter.value = 'all' }, t('localCleared'))
+}
+async function importData(raw) {
+  const data = JSON.parse(raw)
+  if (data.format !== 'travelnote' || !Array.isArray(data.destinations) || !Array.isArray(data.plans)) throw new Error('invalid')
+  const fromLocal = data.source === 'travelnote-local'
+  if (!isLocal && fromLocal && !confirm(t('confirmLocalToWeb'))) return
+  if (!isLocal && !fromLocal && data.accountId && String(data.accountId) !== String(account.value?.id)) throw new Error('account')
+  if (isLocal && !confirm(t('confirmLocalImport'))) return
+  if (!account.value && isLocal) account.value = { id: `local-${crypto.randomUUID?.() || Date.now() + '-' + Math.random().toString(36).slice(2)}`, username: t('localName') }
+  const previous = cloneState(); replaceState(mergeImport(previous, data))
+  try { await syncWorkspace(); authenticated.value = true; authError.value = ''; showToast(t('importSuccess')) } catch (error) { replaceState(previous); throw error }
+}
 async function copyPacket() { try { await navigator.clipboard.writeText(encodePacket(exportPacket.value)); showToast(t('copy')) } catch { showToast(t('invalidPacket')) } }
 async function handleImport(event) {
   const file = event.target.files?.[0]; if (!file) return
   try {
-    const data = JSON.parse(await file.text())
-    if (data.format !== 'travelnote' || !Array.isArray(data.destinations) || !Array.isArray(data.plans)) throw new Error('invalid')
-    if (data.accountId && String(data.accountId) !== String(account.value?.id)) throw new Error('account')
-    const previous = cloneState(); replaceState(mergeImport(previous, data))
-    try { await syncWorkspace(); showToast(t('importSuccess')) } catch (error) { replaceState(previous); throw error }
+    await importData(await file.text())
   } catch (error) { showToast(error.message === 'account' ? t('accountMismatch') : t('invalidPacket')) }
   event.target.value = ''
 }
 async function refreshQr() {
+  if (isLocal) return
   if (activeView.value !== 'exchange') return
   qrText.value = encodePacket(exportPacket.value)
   await nextTick()
@@ -399,11 +447,16 @@ watch(() => [state.trips.map(trip => trip.id).join(','), state.plans.map(plan =>
   const key = exportScopeKey.value
   if ((key.startsWith('trip:') && !state.trips.some(trip => trip.id === key.slice(5))) || (key.startsWith('plan:') && !state.plans.some(plan => plan.id === key.slice(5)))) exportScopeKey.value = 'all'
 })
-onMounted(() => { document.documentElement.lang = locale.value === 'zh' ? 'zh-CN' : locale.value; bootstrap() })
+onMounted(() => {
+  document.documentElement.lang = locale.value === 'zh' ? 'zh-CN' : locale.value
+  if (isLocal) window.travelNoteImport = raw => importData(raw).catch(error => showToast(error.message))
+  bootstrap()
+})
 </script>
 
 <template>
-  <div v-if="!authenticated" class="auth-gate">
+  <div v-if="isLocal && !authenticated" class="auth-gate"><section class="auth-card"><h1>{{ t('localName') }}</h1><p>{{ authError || t('localLoading') }}</p><button class="primary-button" @click="requestLocalImport">{{ t('localRestore') }}</button><input id="import-file" type="file" accept=".json,application/json" @change="handleImport" /></section></div>
+  <div v-else-if="!authenticated" class="auth-gate">
     <section class="auth-card">
       <div class="brand-mark auth-brand"><span class="brand-dot"></span><span>Travel<span>Note</span></span></div>
       <span class="eyebrow">Private travel workspace</span>
@@ -435,11 +488,11 @@ onMounted(() => { document.documentElement.lang = locale.value === 'zh' ? 'zh-CN
       <nav class="main-nav"><button v-for="item in navItems" :key="item.id" class="nav-item" :class="{ active: activeView === item.id }" @click="chooseView(item.id)"><span class="nav-icon">{{ item.icon }}</span><span>{{ item.label }}</span><b v-if="item.count !== undefined">{{ String(item.count).padStart(2, '0') }}</b></button></nav>
       <div class="sidebar-label">{{ t('quickFilter') }}</div>
       <div class="quick-filters"><button class="quick-filter" @click="activeFilter = '想去'; chooseView('destinations')"><i class="dot dot-coral"></i>{{ t('want') }} <span>{{ state.destinations.filter(x => x.status === '想去').length }}</span></button><button class="quick-filter" @click="activeFilter = '已计划'; chooseView('destinations')"><i class="dot dot-blue"></i>{{ t('planned') }} <span>{{ state.destinations.filter(x => x.status === '已计划').length }}</span></button><button class="quick-filter" @click="activeFilter = '已出发'; chooseView('destinations')"><i class="dot dot-green"></i>{{ t('departed') }} <span>{{ state.destinations.filter(x => x.status === '已出发').length }}</span></button></div>
-      <div class="sidebar-bottom"><div class="offline-pill"><span class="offline-dot"></span>{{ t('offline') }}</div><button class="settings-link" @click="showPasswordModal = true">⚙ {{ t('changePassword') }}</button><button class="settings-link" @click="logout">↪ {{ t('logout') }}</button></div>
+      <div class="sidebar-bottom"><div class="offline-pill"><span class="offline-dot"></span>{{ t('offline') }}</div><button v-if="!isLocal" class="settings-link" @click="showPasswordModal = true">⚙ {{ t('changePassword') }}</button><button v-if="!isLocal" class="settings-link" @click="logout">↪ {{ t('logout') }}</button></div>
     </aside>
 
     <main class="main-content">
-      <header class="topbar"><button class="mobile-menu" @click="mobileMenuOpen = !mobileMenuOpen">☰</button><div class="breadcrumb"><span>{{ t('workspace') }}</span><i>/</i><strong>{{ pageTitle }}</strong></div><div class="topbar-actions"><select class="language-select" :value="locale" :aria-label="t('language')" @change="setLocale($event.target.value)"><option v-for="option in localeOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select><button class="mini-avatar" @click="logout" :aria-label="t('logout')">{{ accountAvatar }}</button></div></header>
+      <header class="topbar"><button class="mobile-menu" @click="mobileMenuOpen = !mobileMenuOpen">☰</button><div class="breadcrumb"><span>{{ t(isLocal ? 'localName' : 'workspace') }}</span><i>/</i><strong>{{ pageTitle }}</strong></div><div class="topbar-actions"><select class="language-select" :value="locale" :aria-label="t('language')" @change="setLocale($event.target.value)"><option v-for="option in localeOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select><button v-if="!isLocal" class="mini-avatar" @click="logout" :aria-label="t('logout')">{{ accountAvatar }}</button></div></header>
       <div class="page-wrap">
         <section v-if="activeView === 'destinations'" class="view-section">
           <div class="page-heading"><div><span class="eyebrow">My travel notes</span><h1>{{ t('inspirationTitle') }}</h1><p>{{ t('inspirationIntro') }}</p></div><button class="primary-button" @click="openDestination()">＋ {{ t('addDestination') }}</button></div>
@@ -455,22 +508,22 @@ onMounted(() => { document.documentElement.lang = locale.value === 'zh' ? 'zh-CN
   <div class="trip-filter-row"><label>{{ t('trip') }}<select v-model="tripFilter"><option value="all">{{ t('allTrips') }}</option><option value="ungrouped">{{ t('ungrouped') }}</option><option v-for="trip in state.trips" :key="trip.id" :value="trip.id">{{ trip.name }}</option></select></label></div>
   <div v-for="trip in state.trips.filter(item => item.id === tripFilter)" :key="trip.id" class="trip-summary">
     <strong>{{ trip.name }}</strong><span>{{ state.plans.filter(plan => plan.tripId === trip.id).length }} {{ t('plans') }}</span>
-    <button class="secondary-button" @click="beginExport('trip', trip.id)">{{ t('exportTrip') }}</button>
+    <button v-if="!isLocal" class="secondary-button" @click="beginExport('trip', trip.id)">{{ t('exportTrip') }}</button>
     <button class="text-button" @click="renameTrip(trip)">{{ t('edit') }}</button>
     <button class="text-button" @click="deleteTrip(trip)">{{ t('remove') }}</button>
   </div>
 </div>
-<div class="plan-list"><article v-for="plan in displayedPlans" :key="plan.id" class="plan-row"><div class="plan-date"><strong>{{ formatDate(plan.date) }}</strong><small>{{ formatWeek(plan.date) }}</small></div><div class="plan-main"><small v-if="plan.tripId" class="trip-badge">{{ state.trips.find(trip => trip.id === plan.tripId)?.name }}</small><h3>{{ plan.destination }}</h3><p>{{ plan.activity }}</p><div v-if="plan.note" class="note-block"><button class="note-toggle" @click="$event.currentTarget.nextElementSibling.hidden = !$event.currentTarget.nextElementSibling.hidden; $event.currentTarget.classList.toggle('expanded')">{{ t('viewNote') }} <span>{{ t('noteExpand') }}</span></button><div class="note-content" hidden v-html="markdownHtml(plan.note)"></div></div></div><time>{{ plan.time || t('allDay') }}</time><div class="plan-actions"><button class="small-icon" :title="t('exportPlan')" :aria-label="t('exportPlan')" @click="beginExport('plan', plan.id)">↗</button><button class="small-icon" @click="openPlan(plan.id)">✎</button><button class="small-icon" @click="deletePlan(plan)">×</button></div></article><div v-if="!displayedPlans.length" class="empty-state"><strong>{{ t('noPlans') }}</strong><span>{{ t('noPlansHint') }}</span></div></div></section>
+<div class="plan-list"><article v-for="plan in displayedPlans" :key="plan.id" class="plan-row"><div class="plan-date"><strong>{{ formatDate(plan.date) }}</strong><small>{{ formatWeek(plan.date) }}</small></div><div class="plan-main"><small v-if="plan.tripId" class="trip-badge">{{ state.trips.find(trip => trip.id === plan.tripId)?.name }}</small><h3>{{ plan.destination }}</h3><p>{{ plan.activity }}</p><div v-if="plan.note" class="note-block"><button class="note-toggle" @click="$event.currentTarget.nextElementSibling.hidden = !$event.currentTarget.nextElementSibling.hidden; $event.currentTarget.classList.toggle('expanded')">{{ t('viewNote') }} <span>{{ t('noteExpand') }}</span></button><div class="note-content" hidden v-html="markdownHtml(plan.note)"></div></div></div><time>{{ plan.time || t('allDay') }}</time><div class="plan-actions"><button v-if="!isLocal" class="small-icon" :title="t('exportPlan')" :aria-label="t('exportPlan')" @click="beginExport('plan', plan.id)">↗</button><button class="small-icon" @click="openPlan(plan.id)">✎</button><button class="small-icon" @click="deletePlan(plan)">×</button></div></article><div v-if="!displayedPlans.length" class="empty-state"><strong>{{ t('noPlans') }}</strong><span>{{ t('noPlansHint') }}</span></div></div></section>
 
-        <section v-else-if="activeView === 'exchange'" class="view-section"><div class="exchange-hero"><div><span class="eyebrow">Offline handoff</span><h2>{{ t('exchangeTitle') }}</h2><p>{{ t('exchangeIntro') }}</p></div><span class="hero-symbol">↗</span></div>
-<div class="export-scope">
+        <section v-else-if="activeView === 'exchange'" class="view-section"><div class="exchange-hero"><div><span class="eyebrow">Offline handoff</span><h2>{{ t(isLocal ? 'localBackupTitle' : 'exchangeTitle') }}</h2><p>{{ t(isLocal ? 'localBackupHint' : 'exchangeIntro') }}</p></div><span class="hero-symbol">↗</span></div>
+<div v-if="!isLocal" class="export-scope">
   <label>{{ t('exportScope') }}<select v-model="exportScopeKey">
     <option value="all">{{ t('exportAll') }}</option>
     <optgroup :label="t('trip')"><option v-for="trip in state.trips" :key="trip.id" :value="'trip:' + trip.id">{{ trip.name }}</option></optgroup>
     <optgroup :label="t('exportPlan')"><option v-for="plan in sortedPlans" :key="plan.id" :value="'plan:' + plan.id">{{ plan.date }} · {{ plan.destination }}</option></optgroup>
   </select></label>
   <p>{{ t('exportScopeHint') }}</p><small>{{ exportPacket.plans.length }} {{ t('plans') }} · {{ exportPacket.destinations.length }} {{ t('destinations') }}</small>
-</div><div class="exchange-grid"><article class="exchange-card"><h3>{{ t('generateQr') }}</h3><p>{{ t('qrHint') }}</p><div class="qr-stage"><button class="qr-button" @click="openQr"><canvas ref="qrCanvas" width="512" height="512"></canvas></button></div><div class="data-code">{{ qrText.slice(0, 120) }}…</div><button class="secondary-button" @click="copyPacket">{{ t('copy') }}</button></article><article class="exchange-card"><h3>{{ t('exportImport') }}</h3><p>{{ t('exportHint') }}</p><label class="file-drop" for="import-file"><div><strong>{{ t('chooseJson') }}</strong><small>{{ t('jsonOnly') }}</small></div><input id="import-file" type="file" accept="application/json,.json" @change="handleImport" /></label><button class="primary-button" @click="downloadBackup">{{ t('download') }}</button></article></div></section>
+</div><div class="exchange-grid"><article v-if="!isLocal" class="exchange-card"><h3>{{ t('generateQr') }}</h3><p>{{ t('qrHint') }}</p><div class="qr-stage"><button class="qr-button" @click="openQr"><canvas ref="qrCanvas" width="512" height="512"></canvas></button></div><div class="data-code">{{ qrText.slice(0, 120) }}…</div><button class="secondary-button" @click="copyPacket">{{ t('copy') }}</button></article><article class="exchange-card"><h3>{{ t(isLocal ? 'localBackupTitle' : 'exportImport') }}</h3><p>{{ t(isLocal ? 'localBackupHint' : 'exportHint') }}</p><button v-if="isNativeLocal" class="secondary-button" @click="requestLocalImport">{{ t('localRestore') }}</button><label v-else class="file-drop" for="import-file"><div><strong>{{ t('chooseJson') }}</strong><small>{{ t('jsonOnly') }}</small></div><input id="import-file" type="file" accept="application/json,.json" @change="handleImport" /></label><button class="primary-button" @click="downloadBackup">{{ t('download') }}</button></article></div></section>
 
         <section v-else class="view-section"><div class="page-heading"><div><span class="eyebrow">Your tag library</span><h1>{{ t('tags') }}</h1><p>{{ t('tagIntro') }}</p></div></div><div class="tag-management-card"><div class="tag-management-intro"><div><h2>{{ t('addTag') }}</h2><p>{{ t('tagIntro') }}</p></div><div class="add-tag-row"><input v-model="tagSearchTerm" class="tag-search-input" :placeholder="t('searchTags')" /><input id="new-tag" maxlength="64" :placeholder="t('tagPlaceholder')" @keyup.enter="addTag" /><button class="primary-button" @click="addTag">＋ {{ t('addTag') }}</button></div></div><div class="tag-library"><div v-for="tag in filteredTagCatalog" :key="tag" class="tag-library-item"><div><span class="tag" :class="tagTone(tag)">{{ tag }}</span><small>{{ state.destinations.filter(item => item.tags?.includes(tag)).length }} {{ t('used') }}</small></div><button v-if="systemTags.includes(tag)" class="tag-toggle" :class="{ enabled: state.enabledSystemTags.includes(tag) }" @click="toggleSystemTag(tag)">{{ state.enabledSystemTags.includes(tag) ? t('enabled') : t('disabled') }}</button><button v-else class="small-icon" @click="deleteTag(tag)">×</button></div></div></div></section>
       </div>
@@ -505,4 +558,6 @@ onMounted(() => { document.documentElement.lang = locale.value === 'zh' ? 'zh-CN
 
   <div v-if="showQrLightbox" class="qr-lightbox" @click.self="showQrLightbox = false"><section class="qr-lightbox-card" role="dialog"><div class="modal-header"><div><span class="eyebrow">Offline handoff</span><h2>{{ t('enlargeQr') }}</h2></div><button class="close-button" @click="showQrLightbox = false">×</button></div><button class="qr-lightbox-stage" @click="showQrLightbox = false"><canvas ref="qrLargeCanvas" width="768" height="768"></canvas></button><p class="qr-lightbox-hint">{{ t('qrCloseHint') }}</p></section></div>
   <div class="toast" :class="{ show: toastMessage }">{{ toastMessage }}</div>
+  <nav v-if="isLocal && authenticated" class="local-bottom-nav" :aria-label="t('workspace')"><button v-for="item in navItems" :key="item.id" :class="{ active: activeView === item.id }" @click="chooseView(item.id)"><span>{{ item.icon }}</span>{{ item.label }}</button></nav>
+  <section v-if="isLocal && authenticated && activeView === 'exchange'" class="local-data-settings"><h2>{{ t('localStorageTitle') }}</h2><p>{{ t('localStorageHint') }}</p><p>{{ t('home') }}：{{ state.profile.home || '—' }} <button class="text-button" @click="editHome">{{ t('homeEdit') }}</button></p><button class="text-button" @click="clearLocalData">{{ t('clearLocal') }}</button></section>
 </template>

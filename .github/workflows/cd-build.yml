@@ -41,6 +41,12 @@ jobs:
       - name: Build Vue web frontend
         run: npm run build
 
+      - name: Validate offline planner and build local Android assets
+        run: |
+          npm run test:local
+          node --test server/itinerary.test.mjs server/transfer.test.mjs
+          npm run build:local
+
       - name: Build Docker stack
         env:
           POSTGRES_DB: travelnote
@@ -153,6 +159,21 @@ jobs:
           find mobile/app/build/outputs/apk/release -name '*.apk' -exec cp {} artifacts/travelnote-release.apk \;
           sha256sum artifacts/travelnote-release.apk > artifacts/travelnote-release.apk.sha256
 
+      - name: Build standalone local planner APK
+        working-directory: mobile-local
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/mobile/travelnote-release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle assembleRelease
+
+      - name: Collect local planner APK and checksum
+        run: |
+          test -f mobile-local/app/build/outputs/apk/release/app-release.apk
+          cp mobile-local/app/build/outputs/apk/release/app-release.apk artifacts/travelnote-local-release.apk
+          sha256sum artifacts/travelnote-local-release.apk > artifacts/travelnote-local-release.apk.sha256
+
       - name: Remove signing keystore
         if: always() && steps.android.outputs.enabled == 'true'
         run: rm -f mobile/travelnote-release.keystore
@@ -224,3 +245,5 @@ jobs:
             artifacts/travelnote-web.zip.sha256
             artifacts/travelnote-release.apk
             artifacts/travelnote-release.apk.sha256
+            artifacts/travelnote-local-release.apk
+            artifacts/travelnote-local-release.apk.sha256

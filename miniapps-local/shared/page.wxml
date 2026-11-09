@@ -1,0 +1,36 @@
+<view class="page">
+ <view class="hero"><text class="brand">TravelNote 本地版</text><text class="hint">规划、日程与景点，全部保存在当前手机</text></view>
+ <view wx:if="{{storageError}}" class="card error">无法读取本地数据，原存储已保留。请在备份页恢复。</view>
+ <view wx:if="{{tab === 'plans'}}">
+  <view class="heading"><text>出行计划与日程</text><button data-type="plan" bindtap="open">＋日程</button></view>
+  <picker range="{{tripChoices}}" range-key="name" value="{{tripIndex}}" bindchange="tripFilter"><view class="picker">{{tripChoices[tripIndex].name}} ▾</view></picker>
+  <view class="card" wx:for="{{trips}}" wx:key="id"><text class="title">{{item.name}}</text><view class="actions"><button data-type="trip" data-id="{{item.id}}" bindtap="open">编辑计划</button><button data-type="deleteTrip" data-id="{{item.id}}" bindtap="remove">删除计划</button></view></view>
+  <button class="add" data-type="trip" bindtap="open">＋创建出行计划</button>
+  <view class="card" wx:for="{{plans}}" wx:key="id"><text class="hint">{{item.tripName}}</text><text class="title">{{item.date}} · {{item.time || '全天'}}</text><text>{{item.destination}}</text><text class="lines">{{item.activity}}</text><view wx:if="{{item.note}}"><button data-kind="plan" data-id="{{item.id}}" bindtap="toggleNote">{{item.noteExpanded ? '收起说明' : '查看补充说明'}}</button><rich-text wx:if="{{item.noteExpanded}}" nodes="{{item.noteNodes}}"></rich-text></view><view class="actions"><button data-type="plan" data-id="{{item.id}}" bindtap="open">编辑</button><button data-type="deletePlan" data-id="{{item.id}}" bindtap="remove">删除</button></view></view>
+  <view wx:if="{{!plans.length}}" class="card hint">暂无日程，可先创建出行计划，再添加每天要去的景点。</view>
+ </view>
+ <view wx:if="{{tab === 'destinations'}}">
+  <view class="heading"><text>想去的地方</text><button data-type="destination" bindtap="open">＋景点</button></view><input class="search" placeholder="搜索名称、地区或标签" value="{{query}}" bindinput="search"/>
+  <view class="card" wx:for="{{destinations}}" wx:key="id"><text class="title">{{item.name}}</text><text class="hint">{{item.region}} · {{item.location}}</text><view class="tags"><text wx:for="{{item.tags}}" wx:for-item="tag" wx:key="*this">{{tag}}</text></view><text class="lines">交通：{{item.transport}}</text><text class="lines">安排：{{item.arrangement}}</text><view wx:if="{{item.note}}"><button data-kind="destination" data-id="{{item.id}}" bindtap="toggleNote">{{item.noteExpanded ? '收起说明' : '查看补充说明'}}</button><rich-text wx:if="{{item.noteExpanded}}" nodes="{{item.noteNodes}}"></rich-text></view><text class="hint">去过 {{item.visitCount}} 次</text><view class="actions"><button data-id="{{item.id}}" bindtap="visit">去过 ＋1</button><button data-type="destination" data-id="{{item.id}}" bindtap="open">编辑</button><button data-type="deleteDestination" data-id="{{item.id}}" bindtap="remove">删除</button></view></view>
+ </view>
+ <view wx:if="{{tab === 'tags'}}"><view class="heading">标签管理</view><input class="search" placeholder="模糊搜索标签" value="{{tagQuery}}" bindinput="tagSearch"/><view class="card"><input placeholder="输入新标签" value="{{tagName}}" bindinput="tagInput"/><button bindtap="addTag">添加标签</button></view><view class="card tag-row" wx:for="{{tags}}" wx:key="name"><text>{{item.name}}</text><button wx:if="{{item.system}}" data-id="{{item.name}}" bindtap="toggleTag">{{item.enabled?'已启用':'已取消'}}</button><button wx:else data-type="deleteTag" data-id="{{item.name}}" bindtap="remove">删除</button></view></view>
+ <view wx:if="{{tab === 'backup'}}"><view class="card"><text class="title">出发地</text><input placeholder="常用出发地" value="{{state.profile.home}}" bindinput="home"/><button bindtap="saveHome">保存出发地</button></view><view class="card"><text class="title">备份与恢复</text><text class="hint">日程直接在本机查看。仅备份时生成 JSON 文本，复制到安全位置保存。卸载或清理存储会丢失数据。</text><button bindtap="exportBackup">生成完整备份</button><textarea class="backup" placeholder="生成备份，或粘贴完整 JSON 备份以恢复" value="{{backup}}" bindinput="backupInput" maxlength="-1"/><view class="actions"><button bindtap="copyBackup">复制备份</button><button bindtap="importBackup">恢复备份</button></view><button class="danger" bindtap="clear">清空本地数据</button></view></view>
+ <view wx:if="{{editor}}" class="overlay"><scroll-view scroll-y class="editor"><view class="heading"><text>{{editor === 'destination'?'编辑景点':editor === 'plan'?'编辑日程':'编辑出行计划'}}</text><button bindtap="close">关闭</button></view>
+  <view wx:if="{{editor === 'trip'}}"><text>计划名称</text><input data-field="name" value="{{form.name}}" bindinput="input" placeholder="例如：京都三日游"/></view>
+  <view wx:if="{{editor === 'destination'}}">
+   <text>景点名称</text><input data-field="name" value="{{form.name}}" bindinput="input"/><text>地区</text><input data-field="region" value="{{form.region}}" bindinput="input"/><text>地理位置</text><input data-field="location" value="{{form.location}}" bindinput="input"/>
+   <text>原因 / 标签</text><checkbox-group bindchange="checkboxTags"><label class="choice" wx:for="{{tagOptions}}" wx:key="name"><checkbox value="{{item.name}}" checked="{{item.checked}}"/><text>{{item.name}}</text></label></checkbox-group>
+   <text>交通</text><textarea data-field="transport" value="{{form.transport}}" bindinput="input" maxlength="-1"/><text>安排</text><textarea data-field="arrangement" value="{{form.arrangement}}" bindinput="input" maxlength="-1"/><text>去过次数</text><input type="number" data-field="visitCount" value="{{form.visitCount}}" bindinput="input"/>
+  </view>
+  <view wx:if="{{editor === 'plan'}}">
+   <text>所属出行计划</text><picker range="{{formTripOptions}}" range-key="name" value="{{formTripIndex}}" bindchange="formTrip"><view class="picker">{{formTripOptions[formTripIndex].name}} ▾</view></picker>
+   <text>日期（YYYY-MM-DD）</text><input data-field="date" value="{{form.date}}" bindinput="input"/><text>时间（HH:mm，留空表示全天）</text><input data-field="time" value="{{form.time}}" bindinput="input"/>
+   <text>景点（可多选）</text><checkbox-group bindchange="checkboxPlaces"><label class="choice" wx:for="{{placeOptions}}" wx:key="id"><checkbox value="{{item.id}}" checked="{{item.checked}}"/><text>{{item.name}}</text></label></checkbox-group>
+   <view class="ordered" wx:for="{{selectedPlaces}}" wx:key="id"><text>{{index+1}}. {{item.name}}</text><view class="actions"><button data-index="{{index}}" data-offset="-1" bindtap="move">↑</button><button data-index="{{index}}" data-offset="1" bindtap="move">↓</button></view></view>
+   <text>其他地点</text><input data-field="otherDestination" value="{{form.otherDestination}}" bindinput="input"/><text>安排</text><textarea data-field="activity" value="{{form.activity}}" bindinput="input" maxlength="-1"/>
+  </view>
+  <view wx:if="{{editor !== 'trip'}}"><text>补充说明（Markdown）</text><textarea data-field="note" value="{{form.note}}" bindinput="input" maxlength="-1"/></view>
+  <button class="primary" bindtap="save">保存</button><view class="editor-bottom"></view>
+ </scroll-view></view>
+ <view class="nav"><button data-tab="plans" bindtap="tab">出行日程</button><button data-tab="destinations" bindtap="tab">景点</button><button data-tab="tags" bindtap="tab">标签</button><button data-tab="backup" bindtap="tab">备份</button></view>
+</view>

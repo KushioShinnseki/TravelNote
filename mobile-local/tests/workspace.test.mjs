@@ -1,0 +1,42 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { createRequire } from 'node:module'
+const require=createRequire(import.meta.url)
+const {initial,change,restore,normalize}=require('../../miniapps-local/shared/workspace.cjs')
+test('complete offline planning survives a backup/restore round trip',()=>{
+ let state=initial()
+ state=change(state,{type:'trip',value:{id:'trip1',name:'京都之旅'}})
+ state=change(state,{type:'destination',value:{id:'d1',name:'公园',visitCount:0,tags:['自然风光']}})
+ state=change(state,{type:'destination',value:{id:'d2',name:'博物馆',visitCount:1}})
+ state=change(state,{type:'plan',value:{id:'p1',tripId:'trip1',date:'2026-11-09',time:'',destinationIds:['d2','d1'],note:'# 说明'}})
+ state=change(state,{type:'plan',value:{id:'p2',tripId:'trip1',date:'2026-11-10',destinationIds:['d1']}})
+ assert.equal(state.plans[0].destination,'博物馆 → 公园')
+ assert.equal(state.plans[0].time,'')
+ assert.deepEqual(restore(JSON.stringify(state)),state)
+ assert.equal(state.plans.length,2)
+})
+test('renames update routes; deleting a place keeps the historical label; deleting a trip preserves plans',()=>{
+ let s=initial();s=change(s,{type:'trip',value:{id:'t',name:'旅行'}})
+ s=change(s,{type:'destination',value:{id:'d',name:'旧景点'}})
+ s=change(s,{type:'plan',value:{id:'p',tripId:'t',date:'2026-11-09',destinationIds:['d']}})
+ s=change(s,{type:'destination',value:{...s.destinations[0],name:'新景点'}})
+ assert.equal(s.plans[0].destination,'新景点')
+ s=change(s,{type:'deleteDestination',id:'d'})
+ assert.equal(s.plans[0].destination,'新景点')
+ s=change(s,{type:'deleteTrip',id:'t'})
+ assert.equal(s.plans[0].tripId,'');assert.equal(s.plans.length,1)
+})
+test('invalid updates cannot mutate the previous local state',()=>{
+ const s=initial(),before=JSON.stringify(s)
+ assert.throws(()=>change(s,{type:'destination',value:{name:'',visitCount:0}}))
+ assert.throws(()=>change(s,{type:'destination',value:{name:'景点',visitCount:-1}}))
+ assert.equal(JSON.stringify(s),before)
+ assert.throws(()=>restore('{invalid'))
+ assert.throws(()=>restore(JSON.stringify({...s,scope:{type:'trip',id:'x'}})))
+ assert.throws(()=>normalize({...s,trips:[{id:'x'},{id:'x'}]}))
+})
+test('local tags, disabled system tags, home and visit counts persist independently',()=>{
+ let s=initial();s=change(s,{type:'tag',value:{name:'温泉'}});s=change(s,{type:'toggleTag',id:'自然风光'});s=change(s,{type:'home',value:{home:'东京'}})
+ s=change(s,{type:'destination',value:{id:'a',name:'温泉',tags:['温泉']}});s=change(s,{type:'visit',id:'a'})
+ const copy=restore(JSON.stringify(s));assert.equal(copy.profile.home,'东京');assert.equal(copy.destinations[0].visitCount,1);assert.ok(!copy.enabledSystemTags.includes('自然风光'));assert.ok(copy.tagCatalog.includes('温泉'))
+})
