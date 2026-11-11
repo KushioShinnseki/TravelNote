@@ -4,9 +4,9 @@ TravelNote 是一个离线优先的旅行记录工作台：网页端记录想去
 
 ## 手机独立本地版
 
-`mobile-local/` 是可与原版 `mobile/` 同时安装的独立 Android 应用：无需网页、登录或服务器，直接在手机中创建、查看和编辑出行计划、多天多景点日程、景点和标签，数据保存在手机私有目录。通过 JSON 文件与网页双向交换或单独备份，详见 [本地版说明](mobile-local/README.md)。页面按 320×568 小屏设计并兼顾横屏和平板。
+`clients/apps/local/` 是可与原版 `clients/apps/receiver/` 同时安装的独立 Android 应用：无需网页、登录或服务器，直接在手机中创建、查看和编辑出行计划、多天多景点日程、景点和标签，数据保存在手机私有目录。通过 JSON 文件与网页双向交换或单独备份，详见 [本地版说明](clients/apps/local/README.md)。页面按 320×568 小屏设计并兼顾横屏和平板。
 
-对应的微信、支付宝本地规划小程序放在 `miniapps-local/`，与原扫码版 `miniapps/` 分开，只在本机生成和打包，详见 [本地小程序说明](miniapps-local/README.md)。
+对应的微信、支付宝本地规划小程序放在 `clients/miniapps/local/`，与原扫码版 `clients/miniapps/receiver/` 分开，只在本机生成和打包，详见 [本地小程序说明](clients/miniapps/local/README.md)。
 
 ## Docker 本地运行
 
@@ -132,8 +132,8 @@ Android 签名使用的 `ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、
 
 仓库提供两套离线小程序源码：
 
-- `miniapps/wechat`：微信小程序，使用微信开发者工具导入。
-- `miniapps/alipay`：支付宝小程序，使用支付宝小程序开发者工具导入。
+- `clients/miniapps/receiver/wechat`：微信小程序，使用微信开发者工具导入。
+- `clients/miniapps/receiver/alipay`：支付宝小程序，使用支付宝小程序开发者工具导入。
 
 小程序通过“扫码同步数据”读取网页端二维码，不直接访问网络。二维码包含当前登录账号的 `accountId`；首次扫描绑定账号，后续只接受同一账号的数据。地点和日程按记录 ID 计算新建、更新和删除，网页端删除的记录会在下一次同步时从小程序本地删除。
 

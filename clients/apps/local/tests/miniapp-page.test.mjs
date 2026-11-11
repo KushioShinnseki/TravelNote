@@ -4,9 +4,9 @@ import vm from 'node:vm'
 import fs from 'node:fs'
 import {createRequire} from 'node:module'
 const require=createRequire(import.meta.url)
-const model=require('../../miniapps-local/shared/workspace.cjs')
-const markdown=require('../../miniapps/wechat/utils/markdown.js')
-const source=fs.readFileSync(new URL('../../miniapps-local/shared/page.cjs',import.meta.url),'utf8')
+const model=require('../../../miniapps/local/shared/workspace.cjs')
+const markdown=require('../../../miniapps/receiver/wechat/utils/markdown.js')
+const source=fs.readFileSync(new URL('../../../miniapps/local/shared/page.cjs',import.meta.url),'utf8')
 for(const platform of ['wechat','alipay'])test(`${platform}: page creates and reopens local plans; write failure preserves saved state`,()=>{
  let saved,failWrite=false,page
  const api={

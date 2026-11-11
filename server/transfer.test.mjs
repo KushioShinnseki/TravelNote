@@ -60,7 +60,7 @@ test('scoped imports update and remove only their own plans, and are repeatable'
 })
 
 for (const platform of ['wechat', 'alipay']) {
-  const { decodePacket, applyPacket } = require(`../miniapps/${platform}/utils/packet.js`)
+  const { decodePacket, applyPacket } = require(`../clients/miniapps/receiver/${platform}/utils/packet.js`)
   test(`${platform}: trip/plan QR imports preserve other trips and reject another account`, () => {
     const initial = applyPacket(null, encode(selectExport(workspace))).state
     const changed = { ...workspace, plans: workspace.plans.filter(plan => plan.id !== 'p2') }

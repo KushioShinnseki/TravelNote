@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 const require=createRequire(import.meta.url)
-const {initial,change,restore,normalize}=require('../../miniapps-local/shared/workspace.cjs')
+const {initial,change,restore,normalize}=require('../../../miniapps/local/shared/workspace.cjs')
 test('complete offline planning survives a backup/restore round trip',()=>{
  let state=initial()
  state=change(state,{type:'trip',value:{id:'trip1',name:'京都之旅'}})
