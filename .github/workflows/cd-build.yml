@@ -26,7 +26,7 @@ jobs:
         id: android
         shell: bash
         run: |
-          if [[ -f mobile/settings.gradle.kts && -f mobile/app/build.gradle.kts ]]; then
+          if [[ -f clients/apps/receiver/settings.gradle.kts && -f clients/apps/receiver/app/build.gradle.kts ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
@@ -138,16 +138,16 @@ jobs:
 
       - name: Decode self-signed keystore
         if: steps.android.outputs.enabled == 'true'
-        working-directory: mobile
+        working-directory: clients/apps/receiver
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > travelnote-release.keystore
 
       - name: Build release APK
         if: steps.android.outputs.enabled == 'true'
-        working-directory: mobile
+        working-directory: clients/apps/receiver
         env:
-          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/mobile/travelnote-release.keystore
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/clients/apps/receiver/travelnote-release.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -156,13 +156,13 @@ jobs:
       - name: Collect APK and checksum
         if: steps.android.outputs.enabled == 'true'
         run: |
-          find mobile/app/build/outputs/apk/release -name '*.apk' -exec cp {} artifacts/travelnote-release.apk \;
+          find clients/apps/receiver/app/build/outputs/apk/release -name '*.apk' -exec cp {} artifacts/travelnote-release.apk \;
           sha256sum artifacts/travelnote-release.apk > artifacts/travelnote-release.apk.sha256
 
       - name: Build standalone local planner APK
-        working-directory: mobile-local
+        working-directory: clients/apps/local
         env:
-          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/mobile/travelnote-release.keystore
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/clients/apps/receiver/travelnote-release.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -170,13 +170,13 @@ jobs:
 
       - name: Collect local planner APK and checksum
         run: |
-          test -f mobile-local/app/build/outputs/apk/release/app-release.apk
-          cp mobile-local/app/build/outputs/apk/release/app-release.apk artifacts/travelnote-local-release.apk
+          test -f clients/apps/local/app/build/outputs/apk/release/app-release.apk
+          cp clients/apps/local/app/build/outputs/apk/release/app-release.apk artifacts/travelnote-local-release.apk
           sha256sum artifacts/travelnote-local-release.apk > artifacts/travelnote-local-release.apk.sha256
 
       - name: Remove signing keystore
         if: always() && steps.android.outputs.enabled == 'true'
-        run: rm -f mobile/travelnote-release.keystore
+        run: rm -f clients/apps/receiver/travelnote-release.keystore
 
       - name: Upload CD artifacts
         uses: actions/upload-artifact@v6

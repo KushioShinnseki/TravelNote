@@ -6,7 +6,7 @@ $output = Join-Path $root $OutputDirectory
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 
 foreach ($platform in @("wechat", "alipay")) {
-  $source = Join-Path $root "miniapps\$platform"
+  $source = Join-Path $root "clients/miniapps/receiver/$platform"
   $zip = Join-Path $output "travelnote-$platform-miniapp.zip"
   if (-not (Test-Path $source)) { throw "Mini-program directory was not found: $source" }
   if (Test-Path $zip) { Remove-Item -LiteralPath $zip -Force }

@@ -6,10 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:local": "vite build --config mobile-local/vite.config.mjs",
-    "dev:local": "vite --config mobile-local/vite.config.mjs --host 127.0.0.1",
+    "build:local": "vite build --config clients/apps/local/vite.config.mjs",
+    "dev:local": "vite --config clients/apps/local/vite.config.mjs --host 127.0.0.1",
     "build:miniapps-local": "node scripts/build-local-miniapps.cjs",
-    "test:local": "node --test mobile-local/tests/*.test.mjs",
+    "test:local": "node --test clients/apps/local/tests/*.test.mjs",
     "package:web": "npm run build && powershell -ExecutionPolicy Bypass -File ./scripts/package-web.ps1",
     "docker:build": "docker build --tag travelnote-web:local ."
   },

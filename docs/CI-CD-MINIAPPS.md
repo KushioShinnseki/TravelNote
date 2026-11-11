@@ -5,8 +5,8 @@
 微信和支付宝小程序源码需要保留在 Git 中，位置为：
 
 ```text
-miniapps/wechat/
-miniapps/alipay/
+clients/miniapps/receiver/wechat/
+clients/miniapps/receiver/alipay/
 ```
 
 但是小程序 ZIP 不通过 CI/CD 构建、上传或发布。小程序只能在本地打包，再使用对应平台的开发者工具导入和发布。

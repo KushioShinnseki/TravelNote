@@ -6,8 +6,8 @@
 
 |版本|Android 项目|包名|发布文件|
 |---|---|---|---|
-|原版扫码接收端|`mobile/`|`com.travelnote.mobile`|`travelnote-release.apk`|
-|独立本地规划端|`mobile-local/`|`com.travelnote.local`|`travelnote-local-release.apk`|
+|原版扫码接收端|`clients/apps/receiver/`|`com.travelnote.mobile`|`travelnote-release.apk`|
+|独立本地规划端|`clients/apps/local/`|`com.travelnote.local`|`travelnote-local-release.apk`|
 
 两者可以同时安装。图标沿用 TravelNote 图形，桌面名称为“TravelNote 本地版”。本地版没有网络权限；业务数据通过原子写入保存在应用私有目录 `files/workspace.json`，系统文件选择器负责备份导入导出，不申请存储权限。升级安装保留数据，卸载或清空应用数据会移除本地文件。
 
@@ -25,8 +25,8 @@ npm run build:local
 使用 Java 17、Gradle 8.7+、Android SDK 35，然后执行：
 
 ```sh
-gradle -p mobile-local assembleDebug
-gradle -p mobile-local assembleRelease
+gradle -p clients/apps/local assembleDebug
+gradle -p clients/apps/local assembleRelease
 ```
 
 发布签名使用现有的 `ANDROID_KEYSTORE_PATH`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。未配置发布签名时，只使用 Debug 包测试，或自行签署 Release 包。打包前必须执行 `npm run build:local`，所有页面、脚本、字体和样式均随 APK 内置，加载时不会访问远程服务器。
@@ -41,4 +41,4 @@ gradle -p mobile-local assembleRelease
 
 按 320×568 CSS 像素设计，覆盖 iPhone 5 尺寸的小屏布局，并支持横屏、手机和平板。表单单列滚动，按钮至少 44px，底部导航与弹窗不会相互遮挡。Android 端最低 Android 8.0，建议使用更新的 Android System WebView；这是 Android APK，不是 iOS 安装包。
 
-CD 在现有构建流程中同时生成原版 APK 和本地版 APK 及各自 SHA-256 文件，沿用现有签名 Secrets；不会自动安装到设备。对应本地小程序见 `miniapps-local/`，只在本机生成和打包，不由 CD 发布。
+CD 在现有构建流程中同时生成原版 APK 和本地版 APK 及各自 SHA-256 文件，沿用现有签名 Secrets；不会自动安装到设备。对应本地小程序见 `clients/miniapps/local/`，只在本机生成和打包，不由 CD 发布。
